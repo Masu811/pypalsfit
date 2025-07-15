@@ -1,0 +1,52 @@
+Date                         20.06.25
+Time                         19.29.46
+Projekt Name                 5_YSZ-Ref-02_2.00keV_295.15K_10.0Mio
+Author                       Hirschmann
+Sample                       YSZ
+Source                       ELBE
+Notes                        Beamtime-06-2025
+Path                         /hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/YSZ-Ref-02
+Time-Range in ns             380
+Channel-Dispersion in ns     0.003
+Measured Time in s           253.009
+Global Count-Rate in 1/s     39558.3
+Global Statistic             10008615
+Global Super Single Ratio    0
+-----------------------------
+
+PMT                          0
+PMT Typ                      MINT
+PMT Scintillator             No
+PMT Voltage in V             0
+PMT Attanuation in dB        0
+PMT Threshold in V           0.3
+PMT CF-Level in %            0.5
+PMT EtoV                     1
+PMT Window autotuned         NO
+PMT Stop-Winodw in V         2 - 2
+PMT Start-Window in V        0.7 - 0.9
+-----------------------------
+
+PMT                          1
+PMT Typ                      R13089
+PMT Scintillator             CeBr3 1''2''
+PMT Voltage in V             1500
+PMT Attanuation in dB        6
+PMT Threshold in V           0.05
+PMT CF-Level in %            0.05
+PMT EtoV                     0.000932354
+PMT Window autotuned         YES
+PMT Stop-Winodw in keV       320 - 650
+PMT Start-Window in keV      200 - 200
+PMT Energy Filter Ratio in % 38.0591
+-----------------------------
+
+Spectrum Nr                  0
+Spectrum Statistic           10008615
+Spectrum Count-Rate          39558.3
+Spectrum Center in ps        -211.322
+Spectrum Maximum             72460
+Spectrum FWHM in ps          351
+Spectrum FWXM in ps          771
+Spectrum Peak Pos Stop in V  0.842547
+Spectrum Peak FWHM Stop in V 0.00147578

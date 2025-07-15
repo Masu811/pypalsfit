@@ -1,0 +1,682 @@
+{
+    "Measurement 1_YSZ-Ref-02_6.50keV_295.15K_10.0Mio_PALS_20.06.25_20.16.36": {
+        "Metadata": {
+            "StartDateTime": "2025-06-20 20:16:36",
+            "PositronImplantationEnergy": "6500.0",
+            "SampleTemperature": "295.15",
+            "MeasName": "YSZ-Ref-02",
+            "Date": "20.06.25",
+            "Time": "20.16.36",
+            "Projekt Name": "1_YSZ-Ref-02_6.50keV_295.15K_10.0Mio",
+            "Sample": "YSZ",
+            "Source": "ELBE",
+            "Notes": "Beamtime-06-2025",
+            "Path": "/hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/YSZ-Ref-02",
+            "Time-Range in ns": "380",
+            "Channel-Dispersion in ns": "0.003",
+            "Measured Time in s": "259.754",
+            "Global Count-Rate in 1/s": "38556.8",
+            "Global Statistic": "10015289",
+            "Global Super Single Ratio": "0",
+            "Spectrum Nr": "0",
+            "Spectrum Statistic": "10015289",
+            "Spectrum Count-Rate": "38556.8",
+            "Spectrum Center in ps": "-219.59",
+            "Spectrum Maximum": "76696",
+            "Spectrum FWHM in ps": "330",
+            "Spectrum FWXM in ps": "738",
+            "Spectrum Peak Pos Stop in V": "0.842686",
+            "Spectrum Peak FWHM Stop in V": "0.00142464"
+        },
+        "Detector A": {
+            "res_sigma_1": [
+                88.48335878838199,
+                true,
+                50,
+                120
+            ],
+            "res_intensity_1": [
+                0.8826925012561351,
+                true,
+                0,
+                1
+            ],
+            "res_t0_1": [
+                0,
+                false,
+                -Infinity,
+                Infinity
+            ],
+            "res_sigma_2": [
+                131.4822256346641,
+                true,
+                100,
+                1000
+            ],
+            "res_intensity_2": [
+                0.11730749874386492,
+                true,
+                0,
+                1
+            ],
+            "res_t0_2": [
+                -24.66011524810881,
+                true,
+                -500,
+                500
+            ]
+        }
+    },
+    "Measurement 2_YSZ-Ref-02_0.50keV_295.15K_10.0Mio_PALS_20.06.25_19.14.29": {
+        "Metadata": {
+            "StartDateTime": "2025-06-20 19:14:29",
+            "PositronImplantationEnergy": "500.0",
+            "SampleTemperature": "295.15",
+            "MeasName": "YSZ-Ref-02",
+            "Date": "20.06.25",
+            "Time": "19.14.29",
+            "Projekt Name": "2_YSZ-Ref-02_0.50keV_295.15K_10.0Mio",
+            "Sample": "YSZ",
+            "Source": "ELBE",
+            "Notes": "Beamtime-06-2025",
+            "Path": "/hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/YSZ-Ref-02",
+            "Time-Range in ns": "380",
+            "Channel-Dispersion in ns": "0.003",
+            "Measured Time in s": "336.042",
+            "Global Count-Rate in 1/s": "29837.2",
+            "Global Statistic": "10026567",
+            "Global Super Single Ratio": "0",
+            "Spectrum Nr": "0",
+            "Spectrum Statistic": "10026567",
+            "Spectrum Count-Rate": "29837.2",
+            "Spectrum Center in ps": "-203.576",
+            "Spectrum Maximum": "54555",
+            "Spectrum FWHM in ps": "462",
+            "Spectrum FWXM in ps": "990",
+            "Spectrum Peak Pos Stop in V": "0.842389",
+            "Spectrum Peak FWHM Stop in V": "0.00152024"
+        },
+        "Detector A": {
+            "res_sigma_1": [
+                96.78069431361806,
+                true,
+                50,
+                120
+            ],
+            "res_intensity_1": [
+                0.05695155418419451,
+                true,
+                0,
+                1
+            ],
+            "res_t0_1": [
+                0,
+                false,
+                -Infinity,
+                Infinity
+            ],
+            "res_sigma_2": [
+                132.99166774999526,
+                true,
+                100,
+                1000
+            ],
+            "res_intensity_2": [
+                0.9430484458158055,
+                true,
+                0,
+                1
+            ],
+            "res_t0_2": [
+                -188.3269895729681,
+                true,
+                -500,
+                500
+            ]
+        }
+    },
+    "Measurement 3_YSZ-Ref-02_1.00keV_295.15K_10.0Mio_PALS_20.06.25_19.20.24": {
+        "Metadata": {
+            "StartDateTime": "2025-06-20 19:20:24",
+            "PositronImplantationEnergy": "1000.0",
+            "SampleTemperature": "295.15",
+            "MeasName": "YSZ-Ref-02",
+            "Date": "20.06.25",
+            "Time": "19.20.24",
+            "Projekt Name": "3_YSZ-Ref-02_1.00keV_295.15K_10.0Mio",
+            "Sample": "YSZ",
+            "Source": "ELBE",
+            "Notes": "Beamtime-06-2025",
+            "Path": "/hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/YSZ-Ref-02",
+            "Time-Range in ns": "380",
+            "Channel-Dispersion in ns": "0.003",
+            "Measured Time in s": "269.34",
+            "Global Count-Rate in 1/s": "37210.1",
+            "Global Statistic": "10022162",
+            "Global Super Single Ratio": "0",
+            "Spectrum Nr": "0",
+            "Spectrum Statistic": "10022162",
+            "Spectrum Count-Rate": "37210.1",
+            "Spectrum Center in ps": "-206.978",
+            "Spectrum Maximum": "67207",
+            "Spectrum FWHM in ps": "384",
+            "Spectrum FWXM in ps": "828",
+            "Spectrum Peak Pos Stop in V": "0.842466",
+            "Spectrum Peak FWHM Stop in V": "0.00149847"
+        },
+        "Detector A": {
+            "res_sigma_1": [
+                110.28037694932233,
+                true,
+                50,
+                120
+            ],
+            "res_intensity_1": [
+                0.9328512545361948,
+                true,
+                0,
+                1
+            ],
+            "res_t0_1": [
+                0,
+                false,
+                -Infinity,
+                Infinity
+            ],
+            "res_sigma_2": [
+                178.06052823864866,
+                true,
+                100,
+                1000
+            ],
+            "res_intensity_2": [
+                0.06714874546380523,
+                true,
+                0,
+                1
+            ],
+            "res_t0_2": [
+                53.405468091240664,
+                true,
+                -500,
+                500
+            ]
+        }
+    },
+    "Measurement 4_YSZ-Ref-02_1.50keV_295.15K_10.0Mio_PALS_20.06.25_19.25.11": {
+        "Metadata": {
+            "StartDateTime": "2025-06-20 19:25:11",
+            "PositronImplantationEnergy": "1500.0",
+            "SampleTemperature": "295.15",
+            "MeasName": "YSZ-Ref-02",
+            "Date": "20.06.25",
+            "Time": "19.25.11",
+            "Projekt Name": "4_YSZ-Ref-02_1.50keV_295.15K_10.0Mio",
+            "Sample": "YSZ",
+            "Source": "ELBE",
+            "Notes": "Beamtime-06-2025",
+            "Path": "/hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/YSZ-Ref-02",
+            "Time-Range in ns": "380",
+            "Channel-Dispersion in ns": "0.003",
+            "Measured Time in s": "255.179",
+            "Global Count-Rate in 1/s": "39292",
+            "Global Statistic": "10026490",
+            "Global Super Single Ratio": "0",
+            "Spectrum Nr": "0",
+            "Spectrum Statistic": "10026490",
+            "Spectrum Count-Rate": "39292",
+            "Spectrum Center in ps": "-209.426",
+            "Spectrum Maximum": "71205",
+            "Spectrum FWHM in ps": "366",
+            "Spectrum FWXM in ps": "786",
+            "Spectrum Peak Pos Stop in V": "0.842511",
+            "Spectrum Peak FWHM Stop in V": "0.00148384"
+        },
+        "Detector A": {
+            "res_sigma_1": [
+                101.8696110192787,
+                true,
+                50,
+                120
+            ],
+            "res_intensity_1": [
+                0.8956143683081301,
+                true,
+                0,
+                1
+            ],
+            "res_t0_1": [
+                0,
+                false,
+                -Infinity,
+                Infinity
+            ],
+            "res_sigma_2": [
+                153.9121425726598,
+                true,
+                100,
+                1000
+            ],
+            "res_intensity_2": [
+                0.10438563169186987,
+                true,
+                0,
+                1
+            ],
+            "res_t0_2": [
+                17.21759787977294,
+                true,
+                -500,
+                500
+            ]
+        }
+    },
+    "Measurement 5_YSZ-Ref-02_2.00keV_295.15K_10.0Mio_PALS_20.06.25_19.29.46": {
+        "Metadata": {
+            "StartDateTime": "2025-06-20 19:29:46",
+            "PositronImplantationEnergy": "2000.0",
+            "SampleTemperature": "295.15",
+            "MeasName": "YSZ-Ref-02",
+            "Date": "20.06.25",
+            "Time": "19.29.46",
+            "Projekt Name": "5_YSZ-Ref-02_2.00keV_295.15K_10.0Mio",
+            "Sample": "YSZ",
+            "Source": "ELBE",
+            "Notes": "Beamtime-06-2025",
+            "Path": "/hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/YSZ-Ref-02",
+            "Time-Range in ns": "380",
+            "Channel-Dispersion in ns": "0.003",
+            "Measured Time in s": "253.009",
+            "Global Count-Rate in 1/s": "39558.3",
+            "Global Statistic": "10008615",
+            "Global Super Single Ratio": "0",
+            "Spectrum Nr": "0",
+            "Spectrum Statistic": "10008615",
+            "Spectrum Count-Rate": "39558.3",
+            "Spectrum Center in ps": "-211.322",
+            "Spectrum Maximum": "72460",
+            "Spectrum FWHM in ps": "351",
+            "Spectrum FWXM in ps": "771",
+            "Spectrum Peak Pos Stop in V": "0.842547",
+            "Spectrum Peak FWHM Stop in V": "0.00147578"
+        },
+        "Detector A": {
+            "res_sigma_1": [
+                99.5979893592596,
+                true,
+                50,
+                120
+            ],
+            "res_intensity_1": [
+                0.900846082616855,
+                true,
+                0,
+                1
+            ],
+            "res_t0_1": [
+                0,
+                false,
+                -Infinity,
+                Infinity
+            ],
+            "res_sigma_2": [
+                151.43443542022985,
+                true,
+                100,
+                1000
+            ],
+            "res_intensity_2": [
+                0.09915391738314505,
+                true,
+                0,
+                1
+            ],
+            "res_t0_2": [
+                5.927671431196984,
+                true,
+                -500,
+                500
+            ]
+        }
+    },
+    "Measurement 6_YSZ-Ref-02_2.50keV_295.15K_10.0Mio_PALS_20.06.25_19.34.27": {
+        "Metadata": {
+            "StartDateTime": "2025-06-20 19:34:27",
+            "PositronImplantationEnergy": "2500.0",
+            "SampleTemperature": "295.15",
+            "MeasName": "YSZ-Ref-02",
+            "Date": "20.06.25",
+            "Time": "19.34.27",
+            "Projekt Name": "6_YSZ-Ref-02_2.50keV_295.15K_10.0Mio",
+            "Sample": "YSZ",
+            "Source": "ELBE",
+            "Notes": "Beamtime-06-2025",
+            "Path": "/hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/YSZ-Ref-02",
+            "Time-Range in ns": "380",
+            "Channel-Dispersion in ns": "0.003",
+            "Measured Time in s": "256.017",
+            "Global Count-Rate in 1/s": "39133",
+            "Global Statistic": "10018722",
+            "Global Super Single Ratio": "0",
+            "Spectrum Nr": "0",
+            "Spectrum Statistic": "10018722",
+            "Spectrum Count-Rate": "39133",
+            "Spectrum Center in ps": "-212.861",
+            "Spectrum Maximum": "73646",
+            "Spectrum FWHM in ps": "348",
+            "Spectrum FWXM in ps": "762",
+            "Spectrum Peak Pos Stop in V": "0.842591",
+            "Spectrum Peak FWHM Stop in V": "0.00145806"
+        },
+        "Detector A": {
+            "res_sigma_1": [
+                96.65050919559064,
+                true,
+                50,
+                120
+            ],
+            "res_intensity_1": [
+                0.8974149857561049,
+                true,
+                0,
+                1
+            ],
+            "res_t0_1": [
+                0,
+                false,
+                -Infinity,
+                Infinity
+            ],
+            "res_sigma_2": [
+                145.70821332140116,
+                true,
+                100,
+                1000
+            ],
+            "res_intensity_2": [
+                0.1025850142438951,
+                true,
+                0,
+                1
+            ],
+            "res_t0_2": [
+                -5.7067743676227565,
+                true,
+                -500,
+                500
+            ]
+        }
+    },
+    "Measurement 7_YSZ-Ref-02_3.00keV_295.15K_10.0Mio_PALS_20.06.25_19.39.11": {
+        "Metadata": {
+            "StartDateTime": "2025-06-20 19:39:11",
+            "PositronImplantationEnergy": "3000.0",
+            "SampleTemperature": "295.15",
+            "MeasName": "YSZ-Ref-02",
+            "Date": "20.06.25",
+            "Time": "19.39.11",
+            "Projekt Name": "7_YSZ-Ref-02_3.00keV_295.15K_10.0Mio",
+            "Sample": "YSZ",
+            "Source": "ELBE",
+            "Notes": "Beamtime-06-2025",
+            "Path": "/hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/YSZ-Ref-02",
+            "Time-Range in ns": "380",
+            "Channel-Dispersion in ns": "0.003",
+            "Measured Time in s": "249.65",
+            "Global Count-Rate in 1/s": "40128.3",
+            "Global Statistic": "10018033",
+            "Global Super Single Ratio": "0",
+            "Spectrum Nr": "0",
+            "Spectrum Statistic": "10018033",
+            "Spectrum Count-Rate": "40128.3",
+            "Spectrum Center in ps": "-214.151",
+            "Spectrum Maximum": "74585",
+            "Spectrum FWHM in ps": "345",
+            "Spectrum FWXM in ps": "750",
+            "Spectrum Peak Pos Stop in V": "0.842602",
+            "Spectrum Peak FWHM Stop in V": "0.00145419"
+        },
+        "Detector A": {
+            "res_sigma_1": [
+                94.36507239612543,
+                true,
+                50,
+                120
+            ],
+            "res_intensity_1": [
+                0.8906167197136193,
+                true,
+                0,
+                1
+            ],
+            "res_t0_1": [
+                0,
+                false,
+                -Infinity,
+                Infinity
+            ],
+            "res_sigma_2": [
+                141.6800543312591,
+                true,
+                100,
+                1000
+            ],
+            "res_intensity_2": [
+                0.10938328028638067,
+                true,
+                0,
+                1
+            ],
+            "res_t0_2": [
+                -11.490840504662174,
+                true,
+                -500,
+                500
+            ]
+        }
+    },
+    "Measurement 8_YSZ-Ref-02_3.50keV_295.15K_10.0Mio_PALS_20.06.25_19.43.49": {
+        "Metadata": {
+            "StartDateTime": "2025-06-20 19:43:49",
+            "PositronImplantationEnergy": "3500.0",
+            "SampleTemperature": "295.15",
+            "MeasName": "YSZ-Ref-02",
+            "Date": "20.06.25",
+            "Time": "19.43.49",
+            "Projekt Name": "8_YSZ-Ref-02_3.50keV_295.15K_10.0Mio",
+            "Sample": "YSZ",
+            "Source": "ELBE",
+            "Notes": "Beamtime-06-2025",
+            "Path": "/hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/YSZ-Ref-02",
+            "Time-Range in ns": "380",
+            "Channel-Dispersion in ns": "0.003",
+            "Measured Time in s": "252.747",
+            "Global Count-Rate in 1/s": "39569.6",
+            "Global Statistic": "10001108",
+            "Global Super Single Ratio": "0",
+            "Spectrum Nr": "0",
+            "Spectrum Statistic": "10001108",
+            "Spectrum Count-Rate": "39569.6",
+            "Spectrum Center in ps": "-215.252",
+            "Spectrum Maximum": "74677",
+            "Spectrum FWHM in ps": "345",
+            "Spectrum FWXM in ps": "759",
+            "Spectrum Peak Pos Stop in V": "0.842621",
+            "Spectrum Peak FWHM Stop in V": "0.00145029"
+        },
+        "Detector A": {
+            "res_sigma_1": [
+                94.11084173104823,
+                true,
+                50,
+                120
+            ],
+            "res_intensity_1": [
+                0.8928043678568695,
+                true,
+                0,
+                1
+            ],
+            "res_t0_1": [
+                0,
+                false,
+                -Infinity,
+                Infinity
+            ],
+            "res_sigma_2": [
+                139.64497754678735,
+                true,
+                100,
+                1000
+            ],
+            "res_intensity_2": [
+                0.10719563214313055,
+                true,
+                0,
+                1
+            ],
+            "res_t0_2": [
+                -16.452411770385936,
+                true,
+                -500,
+                500
+            ]
+        }
+    },
+    "Measurement 9_YSZ-Ref-02_4.00keV_295.15K_10.0Mio_PALS_20.06.25_19.48.22": {
+        "Metadata": {
+            "StartDateTime": "2025-06-20 19:48:22",
+            "PositronImplantationEnergy": "4000.0",
+            "SampleTemperature": "295.15",
+            "MeasName": "YSZ-Ref-02",
+            "Date": "20.06.25",
+            "Time": "19.48.22",
+            "Projekt Name": "9_YSZ-Ref-02_4.00keV_295.15K_10.0Mio",
+            "Sample": "YSZ",
+            "Source": "ELBE",
+            "Notes": "Beamtime-06-2025",
+            "Path": "/hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/YSZ-Ref-02",
+            "Time-Range in ns": "380",
+            "Channel-Dispersion in ns": "0.003",
+            "Measured Time in s": "256.327",
+            "Global Count-Rate in 1/s": "39103.3",
+            "Global Statistic": "10023233",
+            "Global Super Single Ratio": "0",
+            "Spectrum Nr": "0",
+            "Spectrum Statistic": "10023233",
+            "Spectrum Count-Rate": "39103.3",
+            "Spectrum Center in ps": "-216.203",
+            "Spectrum Maximum": "74894",
+            "Spectrum FWHM in ps": "345",
+            "Spectrum FWXM in ps": "753",
+            "Spectrum Peak Pos Stop in V": "0.842624",
+            "Spectrum Peak FWHM Stop in V": "0.00145561"
+        },
+        "Detector A": {
+            "res_sigma_1": [
+                94.50814358645371,
+                true,
+                50,
+                120
+            ],
+            "res_intensity_1": [
+                0.9778103863216117,
+                true,
+                0,
+                1
+            ],
+            "res_t0_1": [
+                0,
+                false,
+                -Infinity,
+                Infinity
+            ],
+            "res_sigma_2": [
+                111.11365930911657,
+                true,
+                100,
+                1000
+            ],
+            "res_intensity_2": [
+                0.022189613678388342,
+                true,
+                0,
+                1
+            ],
+            "res_t0_2": [
+                -156.10694264045816,
+                true,
+                -500,
+                500
+            ]
+        }
+    },
+    "Measurement 10_YSZ-Ref-02_4.50keV_295.15K_10.0Mio_PALS_20.06.25_19.53.07": {
+        "Metadata": {
+            "StartDateTime": "2025-06-20 19:53:07",
+            "PositronImplantationEnergy": "4500.0",
+            "SampleTemperature": "295.15",
+            "MeasName": "YSZ-Ref-02",
+            "Date": "20.06.25",
+            "Time": "19.53.07",
+            "Projekt Name": "10_YSZ-Ref-02_4.50keV_295.15K_10.0Mio",
+            "Sample": "YSZ",
+            "Source": "ELBE",
+            "Notes": "Beamtime-06-2025",
+            "Path": "/hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/YSZ-Ref-02",
+            "Time-Range in ns": "380",
+            "Channel-Dispersion in ns": "0.003",
+            "Measured Time in s": "258.018",
+            "Global Count-Rate in 1/s": "38832.8",
+            "Global Statistic": "10019559",
+            "Global Super Single Ratio": "0",
+            "Spectrum Nr": "0",
+            "Spectrum Statistic": "10019559",
+            "Spectrum Count-Rate": "38832.8",
+            "Spectrum Center in ps": "-217.04",
+            "Spectrum Maximum": "75650",
+            "Spectrum FWHM in ps": "339",
+            "Spectrum FWXM in ps": "747",
+            "Spectrum Peak Pos Stop in V": "0.842636",
+            "Spectrum Peak FWHM Stop in V": "0.00145489"
+        },
+        "Detector A": {
+            "res_sigma_1": [
+                91.94303274967265,
+                true,
+                50,
+                120
+            ],
+            "res_intensity_1": [
+                0.9532663757489337,
+                true,
+                0,
+                1
+            ],
+            "res_t0_1": [
+                0,
+                false,
+                -Infinity,
+                Infinity
+            ],
+            "res_sigma_2": [
+                119.10594110099979,
+                true,
+                100,
+                1000
+            ],
+            "res_intensity_2": [
+                0.04673362425106631,
+                true,
+                0,
+                1
+            ],
+            "res_t0_2": [
+                -101.02895995339946,
+                true,
+                -500,
+                500
+            ]
+        }
+    }
+}
