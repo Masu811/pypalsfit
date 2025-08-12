@@ -1,4 +1,5 @@
 from typing import List, Tuple, Dict, Self
+from collections.abc import Sequence
 from copy import deepcopy
 import inspect
 from itertools import product
@@ -290,9 +291,36 @@ class LifetimeSpectrum:
         self,
         fit_channels_left_of_peak: int = 500,
         fit_channels_right_of_peak: int = 3000,
+        left_fit_idx: None | int = None,
+        right_fit_idx: None | int = None,
+        channel_mask: Ellipsis | List[bool | int] = ...,
         **kwargs
     ) -> lmfit.model.ModelResult:
-        """Fit the spectrum to determine lifetimes and intensities."""
+        """Fit the spectrum to determine lifetimes and intensities.
+
+        Parameters
+        ----------
+        fit_channels_left_of_peak : int
+            How many channels to the left of the peak to use for fitting.
+            The default is 500.
+        fit_channels_right_of_peak : int
+            How many channels to the right of the peak to use for fitting.
+            The default is 3000.
+        left_fit_idx : int or None
+            Channel index in the uncut spectrum that marks the beginning of the
+            part to use for the fit. If provided, `fit_channels_left_of_peak` is
+            ignored. If None, `fit_channels_left_of_peak` is used instead.
+            The default is None.
+        right_fit_idx : int or None
+            Channel index in the uncut spectrum that marks the end of the
+            part to use for the fit. If provided, `fit_channels_right_of_peak`
+            is ignored. If None, `fit_channels_right_of_peak` is used instead.
+            The default is None.
+        channel_mask : Sequence of bool or Sequence of int or Ellipsis
+            Boolean mask or fancy index set to determine, which parts in the
+            cut spectrum to use in the fit and which parts to ignore.
+            The default is Ellipsis (use all).
+        """
         err = "LifetimeSpectrum is missing {}. Could not fit"
         assert self.spectrum is not None, err.format("spectrum data")
         assert self.times is not None, err.format("time calibration")
@@ -331,10 +359,13 @@ class LifetimeSpectrum:
 
         peak_idx = np.searchsorted(self.times, self.peak_center)
 
-        data_range = slice(
-            max(peak_idx - fit_channels_left_of_peak, 0),
-            peak_idx + fit_channels_right_of_peak
-        )
+        if left_fit_idx is None:
+            left_fit_idx = peak_idx - fit_channels_left_of_peak
+
+        if right_fit_idx is None:
+            right_fit_idx = peak_idx + fit_channels_right_of_peak
+
+        data_range = slice(max(left_fit_idx, 0), right_fit_idx)
 
         self.trimmed_times = self.times[data_range]
         self.trimmed_spectrum = self.spectrum[data_range]
@@ -355,7 +386,9 @@ class LifetimeSpectrum:
 
         # Fit
         self.fit_result = model.fit(
-            self.trimmed_spectrum, t=self.trimmed_times, weights=weights,
+            self.trimmed_spectrum[channel_mask],
+            t=self.trimmed_times[channel_mask],
+            weights=weights[channel_mask],
             **params, **kwargs
         )
 
@@ -438,6 +471,9 @@ class LifetimeSpectrum:
         setattr(self, f"background", params[f"background"].value)
         setattr(self, f"dbackgroud", may_be_nan(params[f"background"].stderr))
 
+        self.times -= params[f"t0"].value
+        self.peak_center -= params[f"t0"].value
+
         lifetimes = [params[f"lifetime_{i}"].value for i in range(1, self.n_l+1)]
         intensities = [params[f"intensity_{i}"].value for i in range(1, self.n_l+1)]
         dlifetimes = [may_be_nan(params[f"lifetime_{i}"].stderr) for i in range(1, self.n_l+1)]
@@ -476,11 +512,16 @@ class LifetimeSpectrum:
         assert self.fit_result is not None
 
         fig = plt.figure()
-        fig.suptitle("Fit Result")
+        fig.suptitle(f"Fit Result\n{self.name}")
 
         gs = GridSpec(2, 1, height_ratios=[1, 4])
         ax1 = fig.add_subplot(gs[0])
         ax2 = fig.add_subplot(gs[1])
+
+        ax2.set_xlabel("Time [ps]")
+        ax2.set_ylabel("Counts")
+
+        ax1.set_ylabel("Residuals")
 
         ax1.scatter(self.trimmed_times, self.fit_result.residual)
 

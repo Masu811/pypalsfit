@@ -126,6 +126,7 @@ class LifetimeMeasurement:
                     spectrum = s.spectrum,
                     detname = s.detname,
                     tcal = s.tcal,
+                    name = self.name,
                     lt_model = lt_model[f"Detector {s.detname}"],
                     res_model = res_model[f"Detector {s.detname}"],
                     calibrate = calibrate,
@@ -179,6 +180,25 @@ class LifetimeMeasurement:
     @property
     def detnames(self):
         return {s.detname for s in self}
+
+    def show_spectra(self, time_axis=True):
+        if any(s.times is None for s in self):
+            time_axis = False
+        for det in self.detnames:
+            s = self[det]
+            if time_axis:
+                plt.semilogy(s.times, s.spectrum, label=det)
+            else:
+                plt.semilogy(s.spectrum, label=det)
+
+        if time_axis:
+            plt.xlabel("Time [ns]")
+        else:
+            plt.xlabel("Channel")
+        plt.ylabel("Counts")
+        plt.grid()
+        plt.legend()
+        plt.show()
 
     def dump_components(self, filepath=None):
         out = {"Metadata": {k: str(v) for k, v in self.metadata.items()}}

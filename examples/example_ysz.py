@@ -33,3 +33,31 @@ mc = MeasurementCampaign(
 
 mc.dump_resolution_components("data/resolution_components.json")
 
+
+### Samples
+
+folders = ["8-SC104 - adjusted energies", "9-W1Re5", "10-W3Re5"]
+
+mult = MultiCampaign(
+    [top + folder for folder in folders],
+
+    lt_model = "models/w_model.json",
+
+    res_model = top + "ysz_resolution_components.json",
+    res_keys = ["PositronImplantationEnergy"],
+
+    show = False,
+    verbose = True,
+)
+
+mult.sort("PositronImplantationEnergy")
+
+mult.plot(
+    "PositronImplantationEnergy", [
+        "lifetime_1", "intensity_1",
+        "lifetime_2", "intensity_2",
+        "lifetime_3", "intensity_3"
+    ],
+    labels="MeasName", labels_is_param=True,
+    marker="x"
+)
