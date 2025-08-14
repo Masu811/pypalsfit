@@ -52,7 +52,7 @@ class LifetimeSpectrum:
 
         if show and self.spectrum is not None:
             plt.figure()
-            plt.title("Imported Spectrum")
+            plt.title(f"Imported Spectrum\n{self.name}")
             if self.times is not None:
                 plt.semilogy(self.times, self.spectrum)
                 plt.xlabel("Time")
@@ -150,7 +150,7 @@ class LifetimeSpectrum:
         self.r_last_vary_idx = max(r_vary_idcs) if len(r_vary_idcs) > 0 else 0
 
         def convolved_decay(t, N, t0, background, **kwargs):
-            y = np.full(t.shape, 0.0)
+            y = np.zeros_like(t)
 
             l_int = [
                 kwargs[f"h_{i}"] if v else kwargs[f"intensity_{i}"]
@@ -450,11 +450,13 @@ class LifetimeSpectrum:
             param.vary = self.r_vary[j-1]
             param.stderr = r_dint[j-1]
 
+        lifetime_order = np.argsort([params[f"lifetime_{i}"].value for i in range(1, self.n_l+1)])+1
+
         for i in range(1, self.n_l+1):
-            setattr(self, f"lifetime_{i}", params[f"lifetime_{i}"].value)
-            setattr(self, f"dlifetime_{i}", may_be_nan(params[f"lifetime_{i}"].stderr))
-            setattr(self, f"intensity_{i}", params[f"intensity_{i}"].value)
-            setattr(self, f"dintensity_{i}", may_be_nan(params[f"intensity_{i}"].stderr))
+            setattr(self, f"lifetime_{i}", params[f"lifetime_{lifetime_order[i-1]}"].value)
+            setattr(self, f"dlifetime_{i}", may_be_nan(params[f"lifetime_{lifetime_order[i-1]}"].stderr))
+            setattr(self, f"intensity_{i}", params[f"intensity_{lifetime_order[i-1]}"].value)
+            setattr(self, f"dintensity_{i}", may_be_nan(params[f"intensity_{lifetime_order[i-1]}"].stderr))
 
         for j in range(1, self.n_r+1):
             setattr(self, f"res_sigma_{j}", params[f"res_sigma_{j}"].value)
@@ -502,9 +504,32 @@ class LifetimeSpectrum:
 
         return self.fit_result
 
+    def eval_res_fct(self) -> Tuple[np.ndarray, np.ndarray]:
+        assert self.fit_result is not None
+
+        params = self.fit_result.params
+
+        t_shifts = [params[f"res_t0_{i}"].value for i in range(1, self.n_r+1)]
+        sigmas = [params[f"res_sigma_{i}"].value for i in range(1, self.n_r+1)]
+
+        left_ranges = [t_shift - sig for t_shift, sig in zip(t_shifts, sigmas)]
+        right_ranges = [t_shift + sig for t_shift, sig in zip(t_shifts, sigmas)]
+
+        t = np.arange(np.min(left_ranges) - 100, np.max(right_ranges) + 100)
+        y = np.zeros_like(t)
+
+        for j in range(1, self.n_r+1):
+            sig = params[f"res_sigma_{j}"].value
+            t0 = params[f"res_t0_{j}"].value
+            i = params[f"res_intensity_{j}"].value
+
+            y += i * gauss(t, t0, sig)
+
+        return t, y
+
     def plot_fit_result(
         self,
-        show_init: bool = True,
+        show_init: bool = False,
         show: bool = True,
     ) -> Tuple[Figure, Tuple[plt.Axes, ...]]:
         assert self.trimmed_spectrum is not None
@@ -514,18 +539,20 @@ class LifetimeSpectrum:
         fig = plt.figure()
         fig.suptitle(f"Fit Result\n{self.name}")
 
-        gs = GridSpec(2, 1, height_ratios=[1, 4])
-        ax1 = fig.add_subplot(gs[0])
-        ax2 = fig.add_subplot(gs[1])
+        gs = GridSpec(2, 2, height_ratios=[1, 4])
+        ax1 = fig.add_subplot(gs[0, 0])
+        ax2 = fig.add_subplot(gs[1, 0])
+        ax3 = fig.add_subplot(gs[:, 1])
 
         ax2.set_xlabel("Time [ps]")
         ax2.set_ylabel("Counts")
 
         ax1.set_ylabel("Residuals")
 
-        ax1.scatter(self.trimmed_times, self.fit_result.residual)
+        ax1.scatter(self.trimmed_times, self.fit_result.residual, s=1)
 
-        ax2.scatter(self.trimmed_times, self.trimmed_spectrum, label="Data")
+        ax2.scatter(self.trimmed_times, self.trimmed_spectrum, label="Data", s=1)
+
         if show_init:
             ax2.plot(
                 self.trimmed_times, self.fit_result.init_fit, linestyle="--",
@@ -533,16 +560,46 @@ class LifetimeSpectrum:
             )
         ax2.plot(
             self.trimmed_times, self.fit_result.best_fit, linestyle="-",
-            c="C2", label="Best Fit"
+            c="r", label="Best Fit"
         )
 
         ax2.set_yscale("log")
         ax2.set_ylim([1, np.max(self.trimmed_spectrum) * 1.5])
 
+        params = self.fit_result.params
+
+        t_shifts = [params[f"res_t0_{i}"].value for i in range(1, self.n_r+1)]
+        sigmas = [params[f"res_sigma_{i}"].value for i in range(1, self.n_r+1)]
+
+        left_ranges = [t_shift - sig for t_shift, sig in zip(t_shifts, sigmas)]
+        right_ranges = [t_shift + sig for t_shift, sig in zip(t_shifts, sigmas)]
+
+        t = np.arange(np.min(left_ranges) - 100, np.max(right_ranges) + 100)
+        y = np.zeros_like(t)
+        components = []
+
+        for j in range(1, self.n_r+1):
+            sig = params[f"res_sigma_{j}"].value
+            t0 = params[f"res_t0_{j}"].value
+            i = params[f"res_intensity_{j}"].value
+
+            c = i * gauss(t, t0, sig)
+            y += c
+            components.append(c)
+
+        for i, c in enumerate(components):
+            ax3.semilogy(t, c, label=f"Component {i}")
+        ax3.semilogy(t, y, label="Total")
+        ax3.set_title("Resolution Components")
+        ax3.set_xlabel("Time [ps]")
+        ax3.set_ylim([1e-6, np.max(y)*1.1])
+
         if show:
             ax1.grid()
             ax2.grid()
+            ax3.grid()
             ax2.legend()
+            ax3.legend()
             plt.show()
 
         return fig, (ax1, ax2)
