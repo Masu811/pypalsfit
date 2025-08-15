@@ -1,4 +1,4 @@
-from typing import List, Tuple, Dict, Self
+from typing import List, Tuple, Dict, Self, Callable
 from collections.abc import Sequence
 from copy import deepcopy
 import inspect
@@ -12,11 +12,14 @@ from matplotlib.gridspec import GridSpec
 from scipy.special import erfc
 import lmfit
 
-from .model import LifetimeModel, combine_models, parse_model, dump_model
+from .model import LifetimeModel, combine_models, parse_model, dump_model, gauss
 from .utils import may_be_nan
 
 
 sqrt_2 = np.sqrt(2)
+sqrt_2_pi = np.sqrt(2*np.pi)
+sqrt_2_inv = 1 / sqrt_2
+sqrt_2_pi_inv = 1 / sqrt_2_pi
 
 
 class LifetimeSpectrum:
@@ -131,7 +134,7 @@ class LifetimeSpectrum:
         self,
         n: float | int,
         shift: float | int
-    ) -> Tuple[lmfit.Model, lmfit.Parameters]:
+    ) -> Tuple[lmfit.Model, lmfit.Parameters, Callable]:
         assert self.spectrum is not None
         assert self.times is not None
         assert self.model is not None
@@ -150,7 +153,7 @@ class LifetimeSpectrum:
         self.r_last_vary_idx = max(r_vary_idcs) if len(r_vary_idcs) > 0 else 0
 
         def convolved_decay(t, N, t0, background, **kwargs):
-            y = np.zeros_like(t)
+            y = np.zeros_like(t, dtype=float)
 
             l_int = [
                 kwargs[f"h_{i}"] if v else kwargs[f"intensity_{i}"]
@@ -220,6 +223,150 @@ class LifetimeSpectrum:
             *[p(f"res_t0_{j}") for j in range(1, self.n_r+1)],
         ])
 
+        def dfunc(params, data, weights, t):
+            N = params["N"]
+            t0 = params["t0"]
+            background = params["background"]
+
+            l_int = [
+                params[f"h_{i}"] if v else params[f"intensity_{i}"]
+                for i, v in enumerate(self.l_vary, 1)
+            ]
+            l_cumul = sum(i * (not v) for i, v in zip(l_int, self.l_vary))
+            for i in range(self.n_l):
+                if self.l_vary[i]:
+                    l_int[i] *= max(1 - l_cumul, 0)
+                    l_cumul += l_int[i]
+
+            r_int = [
+                params[f"res_h_{j}"] if v else params[f"res_intensity_{j}"]
+                for j, v in enumerate(self.r_vary, 1)
+            ]
+            r_cumul = sum(i * (not v) for i, v in zip(r_int, self.r_vary))
+            for j in range(self.n_r):
+                if self.r_vary[j]:
+                    r_int[j] *= max(1 - r_cumul, 0)
+                    r_cumul += r_int[j]
+
+            terms = {}
+            deriv = {}
+
+            f = convolved_decay(t, **params)
+
+            for i, j in product(range(1, self.n_l+1), range(1, self.n_r+1)):
+                l_tau = params[f"lifetime_{i}"]
+                l_i = l_int[i-1]
+                r_sigma = params[f"res_sigma_{j}"]
+                r_i = r_int[j-1]
+                r_t0 = params[f"res_t0_{j}"]
+                # e becomes numerically unstable for lifetimes ~ tcal[1]
+                _t = t - (t0 + r_t0)
+                a = -_t / l_tau + (r_sigma/(sqrt_2*l_tau))**2
+                b = r_sigma / (l_tau * sqrt_2) - _t / (r_sigma * sqrt_2)
+                e = np.exp(a)
+                c = erfc(b)
+                decay = N * l_i * r_i / (2*l_tau) * e * c
+                exp_comb = N * (l_i * r_i) / (sqrt_2_pi * l_tau) * np.exp(a - b**2)
+
+                df_dt0 = -exp_comb / r_sigma + decay / l_tau
+                df_dtau = exp_comb * r_sigma / l_tau**2 + decay * (-r_sigma**2/l_tau**3 + _t/l_tau**2 - 1/l_tau)
+                df_dsigma = decay * r_sigma / l_tau**2 - exp_comb * (1/l_tau + _t/r_sigma**2)
+                df_dr_t0 = df_dt0
+
+                terms[f"{i}_{j}"] = decay
+
+                deriv[f"{i}_{j}"] = [
+                    df_dt0,
+                    df_dtau,
+                    df_dsigma,
+                    df_dr_t0,
+                ]
+
+            df_dN = (f - background) / N
+            df_dbackground = np.ones_like(t, dtype=float)
+            df_dt0 = np.sum([
+                deriv[f"{i}_{j}"][0]
+                for j in range(1, self.n_r+1)
+                for i in range(1, self.n_l+1)
+            ], axis=0)
+
+            l = self.l_vary.copy()
+            l[-1] = False
+            r = self.r_vary.copy()
+            r[-1] = False
+
+            df_dh_i = []
+
+            for k in range(1, self.n_l+1):
+                df_dh_k = []
+                if not l[k-1]:
+                    df_dh_i.append(np.zeros_like(t, dtype=float))
+                    continue
+                for n, m in product(range(1, self.n_l+1), range(1, self.n_r+1)):
+                    if n < k:
+                        continue
+                    elif n == k:
+                        df_dh_k.append(terms[f"{n}_{m}"] / (params[f"h_{k}"] + 1e-4))
+                    else:
+                        df_dh_k.append(-terms[f"{n}_{m}"] / (1 - params[f"h_{k}"] + 1e-4))
+
+                df_dh_i.append(np.sum(df_dh_k, axis=0))
+
+            df_dres_h_j = []
+
+            for k in range(1, self.n_r+1):
+                df_dres_h_k = []
+                if not r[k-1]:
+                    df_dres_h_j.append(np.zeros_like(t, dtype=float))
+                    continue
+                for n, m in product(range(1, self.n_l+1), range(1, self.n_r+1)):
+                    if m < k:
+                        continue
+                    elif m == k:
+                        df_dres_h_k.append(terms[f"{n}_{m}"] / (params[f"res_h_{k}"] + 1e-4))
+                    else:
+                        df_dres_h_k.append(-terms[f"{n}_{m}"] / (1 - params[f"res_h_{k}"] + 1e-4))
+
+                df_dres_h_j.append(np.sum(df_dres_h_k, axis=0))
+
+            mask = [params[p].vary for p in ["N", "t0", "background"]]
+
+            for i in range(1, self.n_l+1):
+                mask.append(params[f"lifetime_{i}"].vary)
+                mask.append(l[i-1])
+
+            for j in range(1, self.n_r+1):
+                mask.append(params[f"res_sigma_{j}"].vary)
+                mask.append(r[j-1])
+                mask.append(params[f"res_t0_{j}"].vary)
+
+            out = [df_dN, df_dt0, df_dbackground]
+
+            for i in range(1, self.n_l+1):
+                out.append(
+                    np.sum(
+                        [deriv[f"{i}_{j}"][1] for j in range(1, self.n_r+1)], axis=0
+                    )
+                )
+                out.append(df_dh_i[i-1])
+
+            for j in range(1, self.n_r+1):
+                out.append(
+                    np.sum(
+                        [deriv[f"{i}_{j}"][2] for i in range(1, self.n_l+1)], axis=0
+                    )
+                )
+                out.append(df_dres_h_j[j-1])
+                out.append(
+                    np.sum(
+                        [deriv[f"{i}_{j}"][3] for i in range(1, self.n_l+1)], axis=0
+                    )
+                )
+
+            out = np.array(out)
+
+            return -out[mask] * weights
+
         model = lmfit.Model(convolved_decay)
         params = lmfit.Parameters()
 
@@ -285,7 +432,7 @@ class LifetimeSpectrum:
             param.name = f"res_t0_{j}"
             params.add(deepcopy(param))
 
-        return model, params
+        return model, params, dfunc
 
     def fit(
         self,
@@ -294,6 +441,7 @@ class LifetimeSpectrum:
         left_fit_idx: None | int = None,
         right_fit_idx: None | int = None,
         channel_mask: Ellipsis | List[bool | int] = ...,
+        use_jacobian: bool = True,
         **kwargs
     ) -> lmfit.model.ModelResult:
         """Fit the spectrum to determine lifetimes and intensities.
@@ -370,7 +518,7 @@ class LifetimeSpectrum:
         self.trimmed_times = self.times[data_range]
         self.trimmed_spectrum = self.spectrum[data_range]
 
-        model, params = self.make_model(n, self.peak_center)
+        model, params, dfunc = self.make_model(n, self.peak_center)
 
         weights = np.sqrt(1/np.where(self.trimmed_spectrum > 0, self.trimmed_spectrum, 1))
 
@@ -384,12 +532,18 @@ class LifetimeSpectrum:
             plt.tight_layout()
             plt.show()
 
-        # Fit
+        if use_jacobian:
+            if "fit_kws" in kwargs:
+                kwargs["fit_kws"].update({"Dfun": dfunc, "col_deriv": True})
+            else:
+                kwargs["fit_kws"] = {"Dfun": dfunc, "col_deriv": True}
+
         self.fit_result = model.fit(
-            self.trimmed_spectrum[channel_mask],
+            data=self.trimmed_spectrum[channel_mask],
+            params=params,
             t=self.trimmed_times[channel_mask],
             weights=weights[channel_mask],
-            **params, **kwargs
+            **kwargs
         )
 
         params = self.fit_result.params
