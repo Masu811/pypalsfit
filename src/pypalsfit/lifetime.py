@@ -9,6 +9,7 @@ import numpy as np
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+from matplotlib.widgets import RangeSlider
 from scipy.special import erfc
 import lmfit
 
@@ -133,7 +134,8 @@ class LifetimeSpectrum:
     def make_model(
         self,
         n: float | int,
-        shift: float | int
+        shift: float | int,
+        bg: float | int | None = None,
     ) -> Tuple[lmfit.Model, lmfit.Parameters, Callable]:
         assert self.spectrum is not None
         assert self.times is not None
@@ -380,6 +382,8 @@ class LifetimeSpectrum:
         if self.model.background_component is not None:
             param = self.model.background_component.background
             param.name = "background"
+            if bg is not None:
+                param.value = bg
             params.add(deepcopy(param))
         else:
             params.add("background", 0, vary=False)
@@ -434,6 +438,75 @@ class LifetimeSpectrum:
 
         return model, params, dfunc
 
+    def get_bg(
+        self,
+        left_bg_idx: None | int = None,
+        right_bg_idx: None | int = None,
+    ) -> float:
+        assert self.spectrum is not None
+
+        if left_bg_idx is None or right_bg_idx is None:
+            fig, axs = plt.subplots(1, 2)
+
+            fig.suptitle(f"Background Determination (Close Plot to Confirm)\n{self.name}")
+
+            left_bg_idx = left_bg_idx or 0
+            right_bg_idx = right_bg_idx or self.spectrum.shape[0] - 1
+
+            axs[0].semilogy(self.spectrum)
+            l_lim = axs[0].axvline(left_bg_idx, c="C1")
+            u_lim = axs[0].axvline(right_bg_idx, c="C1")
+            axs[0].set_xlabel("Channel")
+            axs[0].set_ylabel("Counts")
+            axs[0].set_title("Entire Spectrum")
+
+            bg_img, = axs[1].semilogy(
+                np.linspace(0, 1, right_bg_idx - left_bg_idx),
+                self.spectrum[left_bg_idx:right_bg_idx]
+            )
+            avg = np.mean(self.spectrum[left_bg_idx:right_bg_idx])
+            axs[1].set_title(f"Background Region\nAverage Counts: {avg:.4f}")
+
+            fig.subplots_adjust(bottom=0.25)
+
+            slider_ax = fig.add_axes([0.20, 0.1, 0.60, 0.03])
+            slider = RangeSlider(
+                slider_ax,
+                "Background Range",
+                left_bg_idx,
+                right_bg_idx,
+                valinit=(left_bg_idx, right_bg_idx),
+            )
+
+            lower_lim = [left_bg_idx]
+            upper_lim = [right_bg_idx]
+
+            def update(val):
+                lower_lim[0] = left_bg_idx = int(slider.val[0])
+                upper_lim[0] = right_bg_idx = int(slider.val[1])
+
+                l_lim.set_xdata([left_bg_idx] * 2)
+                u_lim.set_xdata([right_bg_idx] * 2)
+
+                ydata = self.spectrum[left_bg_idx:right_bg_idx]
+                xdata = np.linspace(0, 1, right_bg_idx - left_bg_idx)
+
+                axs[1].set_title(f"Background Region\nAverage Counts: {np.mean(ydata):.4f}")
+
+                bg_img.set_ydata(ydata)
+                bg_img.set_xdata(xdata)
+
+                fig.canvas.draw_idle()
+
+            slider.on_changed(update)
+
+            plt.show()
+
+            left_bg_idx = lower_lim[0]
+            right_bg_idx = upper_lim[0]
+
+        return float(np.mean(self.spectrum[left_bg_idx:right_bg_idx]))
+
     def fit(
         self,
         fit_channels_left_of_peak: int = 500,
@@ -442,6 +515,9 @@ class LifetimeSpectrum:
         right_fit_idx: None | int = None,
         channel_mask: Ellipsis | List[bool | int] = ...,
         use_jacobian: bool = True,
+        left_bg_idx: None | int = None,
+        right_bg_idx: None | int = None,
+        get_bg: bool = False,
         **kwargs
     ) -> lmfit.model.ModelResult:
         """Fit the spectrum to determine lifetimes and intensities.
@@ -468,6 +544,33 @@ class LifetimeSpectrum:
             Boolean mask or fancy index set to determine, which parts in the
             cut spectrum to use in the fit and which parts to ignore.
             The default is Ellipsis (use all).
+        use_jacobian : bool
+            Whether to use the analytical Jacobian matrix during fitting.
+            Using the analytical Jacobian generally reduces the number of
+            function evaluations required to find the optimum. If disabled,
+            the Jacobian is numerically computed. For more info see the docs of
+            the underlying lmfit.Model.fit and scipy.optimize.leastsq
+            function. The default is True.
+        left_bg_idx : int or None
+            Channel index in the uncut spectrum that marks the beginning of
+            the region to use to determine the background level. If
+            `left_bg_idx` and `right_bg_idx` are given and `get_bg` is True,
+            the background is taken as the average count per bin in the defined
+            region. If either or both parameters are None while `get_bg` is
+            True, a background determination prompt is opened. The default is
+            None.
+        right_bg_idx : int or None
+            Same as `left_bg_idx` but for marking the end of the background
+            region. The default is None.
+        get_bg : bool
+            Whether to compute the background level from a given region in the
+            spectrum. If `left_bg_idx` and `right_bg_idx` are given and `get_bg`
+            is True, the background is taken as the average count per bin in the
+            defined region. If either or both parameters are None while `get_bg`
+            is True, a background determination prompt is opened. If `get_bg` is
+            False, the background level is not determined. The default is False.
+        **kwargs:
+            Other keyword arguments are passed to lmfit.Model.fit.
         """
         err = "LifetimeSpectrum is missing {}. Could not fit"
         assert self.spectrum is not None, err.format("spectrum data")
@@ -507,6 +610,10 @@ class LifetimeSpectrum:
 
         peak_idx = np.searchsorted(self.times, self.peak_center)
 
+        bg = None
+        if get_bg or left_fit_idx is not None or right_bg_idx is not None:
+            bg = self.get_bg(left_bg_idx, right_bg_idx)
+
         if left_fit_idx is None:
             left_fit_idx = peak_idx - fit_channels_left_of_peak
 
@@ -518,7 +625,7 @@ class LifetimeSpectrum:
         self.trimmed_times = self.times[data_range]
         self.trimmed_spectrum = self.spectrum[data_range]
 
-        model, params, dfunc = self.make_model(n, self.peak_center)
+        model, params, dfunc = self.make_model(n, self.peak_center, bg)
 
         weights = np.sqrt(1/np.where(self.trimmed_spectrum > 0, self.trimmed_spectrum, 1))
 
