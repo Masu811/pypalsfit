@@ -34,6 +34,7 @@ class LifetimeMeasurement:
         show: bool = False,
         verbose: bool = False,
         autocompute: bool = True,
+        debug: bool = False,
         **kwargs
     ) -> None:
 
@@ -90,7 +91,7 @@ class LifetimeMeasurement:
 
                 params = {k: str(self.metadata[k]) for k in keys}
 
-                if verbose:
+                if debug:
                     print(f"Picking a {kind} model for measurement with parameters {params}...")
 
                 for name, model in models.items():
@@ -99,7 +100,7 @@ class LifetimeMeasurement:
                     if params == model_params:
                         models.clear()
                         models.update(model)
-                        if verbose:
+                        if debug:
                             print(f"Picking {name}")
                         break
                 else:

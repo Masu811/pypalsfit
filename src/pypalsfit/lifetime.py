@@ -163,7 +163,7 @@ class LifetimeSpectrum:
                 kwargs[f"h_{i}"] if v else kwargs[f"intensity_{i}"]
                 for i, v in enumerate(self.l_vary, 1)
             ]
-            l_cumul = sum(i * (not v) for i, v in zip(l_int, self.l_vary))
+            l_cumul = sum(i for i, v in zip(l_int, self.l_vary) if not v)
             for i in range(self.n_l):
                 if self.l_vary[i]:
                     l_int[i] *= max(1 - l_cumul, 0)
@@ -173,7 +173,7 @@ class LifetimeSpectrum:
                 kwargs[f"res_h_{j}"] if v else kwargs[f"res_intensity_{j}"]
                 for j, v in enumerate(self.r_vary, 1)
             ]
-            r_cumul = sum(i * (not v) for i, v in zip(r_int, self.r_vary))
+            r_cumul = sum(i for i, v in zip(r_int, self.r_vary) if not v)
             for j in range(self.n_r):
                 if self.r_vary[j]:
                     r_int[j] *= max(1 - r_cumul, 0)
@@ -236,7 +236,7 @@ class LifetimeSpectrum:
                 params[f"h_{i}"] if v else params[f"intensity_{i}"]
                 for i, v in enumerate(self.l_vary, 1)
             ]
-            l_cumul = sum(i * (not v) for i, v in zip(l_int, self.l_vary))
+            l_cumul = sum(i for i, v in zip(l_int, self.l_vary) if not v)
             for i in range(self.n_l):
                 if self.l_vary[i]:
                     l_int[i] *= max(1 - l_cumul, 0)
@@ -246,7 +246,7 @@ class LifetimeSpectrum:
                 params[f"res_h_{j}"] if v else params[f"res_intensity_{j}"]
                 for j, v in enumerate(self.r_vary, 1)
             ]
-            r_cumul = sum(i * (not v) for i, v in zip(r_int, self.r_vary))
+            r_cumul = sum(i for i, v in zip(r_int, self.r_vary) if not v)
             for j in range(self.n_r):
                 if self.r_vary[j]:
                     r_int[j] *= max(1 - r_cumul, 0)
@@ -507,14 +507,18 @@ class LifetimeSpectrum:
 
     def fit(
         self,
-        fit_channels_left_of_peak: int = 500,
-        fit_channels_right_of_peak: int = 3000,
-        left_fit_idx: None | int = None,
-        right_fit_idx: None | int = None,
-        channel_mask: Ellipsis | List[bool | int] = ...,
+        fit_time_left_of_peak: int | float = 300,
+        fit_time_right_of_peak: int | float = 3000,
+        fit_channels_left_of_peak: int | None = None,
+        fit_channels_right_of_peak: int | None = None,
+        fit_start_time: int | float | None = None,
+        fit_end_time: int | float | None = None,
+        fit_start_idx: int | None = None,
+        fit_end_idx: int | None = None,
+        channel_mask: EllipsisType | Sequence[bool | int] = ...,
         use_jacobian: bool = True,
-        left_bg_idx: None | int = None,
-        right_bg_idx: None | int = None,
+        left_bg_idx: int | None = None,
+        right_bg_idx: int | None = None,
         get_bg: bool = False,
         **kwargs
     ) -> lmfit.model.ModelResult:
@@ -608,20 +612,42 @@ class LifetimeSpectrum:
 
         peak_idx = np.searchsorted(self.times, self.peak_center)
 
-        bg = None
-        if get_bg or left_fit_idx is not None or right_bg_idx is not None:
-            bg = self.get_bg(left_bg_idx, right_bg_idx)
+        def time_to_ch(time):
+            return int(time / self.tcal[1] - self.tcal[0])
 
-        if left_fit_idx is None:
-            left_fit_idx = peak_idx - fit_channels_left_of_peak
+        def get_abs_idx(sign, abs_ch, abs_time, rel_ch, rel_time):
+            if abs_ch is not None:
+                return abs_ch
 
-        if right_fit_idx is None:
-            right_fit_idx = peak_idx + fit_channels_right_of_peak
+            if abs_time is not None:
+                return time_to_ch(abs_time)
 
-        data_range = slice(max(left_fit_idx, 0), right_fit_idx)
+            if rel_ch is not None:
+                return peak_idx + sign * rel_ch
+
+            if rel_time is not None:
+                return time_to_ch(self.peak_center + sign * rel_time)
+
+            return None
+
+        left_fit_idx = get_abs_idx(
+            -1, fit_start_idx, fit_start_time,
+            fit_channels_left_of_peak, fit_time_left_of_peak
+        ) or 0
+
+        right_fit_idx = get_abs_idx(
+            1, fit_end_idx, fit_end_time,
+            fit_channels_right_of_peak, fit_time_right_of_peak
+        ) or len(self.spectrum) - 1
+
+        data_range = slice(left_fit_idx, right_fit_idx)
 
         self.trimmed_times = self.times[data_range]
         self.trimmed_spectrum = self.spectrum[data_range]
+
+        bg = None
+        if get_bg or left_bg_idx is not None or right_bg_idx is not None:
+            bg = self.get_bg(left_bg_idx, right_bg_idx)
 
         model, params, dfunc = self.make_model(n, self.peak_center, bg)
 
@@ -881,8 +907,8 @@ class LifetimeSpectrum:
         n_r = len(self.model.resolution_components)
 
         headers = ["Parameter", "Value", "Stderr (abs)", "Stderr (rel)",
-                   "Min", "Max", "Fixed"]
-        formats = ["<", ">", ">", ">", ">", ">", "<"]
+                   "Min", "Max", "Fixed", ""]
+        formats = ["<", ">", ">", ">", ">", ">", "<", "<"]
 
         def print_params(params):
             table_data = np.array([
@@ -894,9 +920,10 @@ class LifetimeSpectrum:
                         if p.stderr is not None else "nan"
                     ),
                     f"{abs(100 * p.stderr / p.value):.3f} %" if p.value != 0 and p.stderr is not None else "nan",
-                    f"{p.min:.2f}",
-                    f"{p.max:.2f}",
+                    f"{100 * p.min:.1f}" if "int" in p.name else f"{p.min:.1f}",
+                    f"{100 * p.max:.1f}" if "int" in p.name else f"{p.max:.1f}",
                     "" if p.vary else "Fixed",
+                    "At Boundary" if abs(p.value - p.min) < 1e-5 or abs(p.value - p.max) < 1e-5 else "",
                 ]
                 for p in params
             ], dtype=str)

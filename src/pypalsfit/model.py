@@ -123,7 +123,7 @@ class ResolutionComponent:
             t0 if isinstance(t0, lmfit.Parameter) else
             lmfit.Parameter(
                 "t0",
-                *parse_parameter_tuple(t0, vary=False)
+                *parse_parameter_tuple(t0)
             )
         )
         self.__name__ = "Resolution Component"
@@ -237,7 +237,7 @@ def parse_model(model: Dict[str, Tuple] | None) -> LifetimeModel | None:
             ResolutionComponent(
                 sigma=parse_parameter_tuple(model.pop(f"res_sigma_{j}", 100)),
                 intensity=parse_parameter_tuple(model.pop(f"res_intensity_{j}", 0.5)),
-                t0=parse_parameter_tuple(model.pop(f"res_t0_{j}", 0), vary=False)
+                t0=parse_parameter_tuple(model.pop(f"res_t0_{j}", 0))
             )
         )
 
