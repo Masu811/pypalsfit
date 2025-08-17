@@ -1069,7 +1069,7 @@ class LifetimeSpectrum:
                     f"{100 * p.min:.1f}" if "int" in p.name else f"{p.min:.1f}",
                     f"{100 * p.max:.1f}" if "int" in p.name else f"{p.max:.1f}",
                     "" if p.vary else "Fixed",
-                    "At Boundary" if abs(p.value - p.min) < 1e-5 or abs(p.value - p.max) < 1e-5 else "",
+                    "At Boundary" if abs(p.value - p.min) < 1e-3 or abs(p.value - p.max) < 1e-3 else "",
                 ]
                 for p in params
             ], dtype=str)
