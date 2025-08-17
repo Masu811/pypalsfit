@@ -1,4 +1,5 @@
 from typing import List, Tuple, Dict, Self, Callable
+from types import EllipsisType
 from collections.abc import Sequence
 from copy import deepcopy
 import inspect
@@ -111,16 +112,17 @@ class LifetimeSpectrum:
         return getattr(self, item)
 
     def __add__(self, other: Self):
+        assert self.spectrum is not None and other.spectrum is not None
         new = LifetimeSpectrum(
             spectrum = self.spectrum + other.spectrum,
             detname = self.detname if self.detname == other.detname else "A",
             tcal = (
-                None if any(t is None for t in (self.tcal, other.tcal))
+                None if self.tcal is None or other.tcal is None
                 else np.average((self.tcal, other.tcal), axis=0)
             ),
             name = (
-                None if any(n is None for n in (self.name, other.name))
-                else " + ".join(self.name, other.name)
+                None if self.name is None or other.name is None
+                else " + ".join([self.name, other.name])
             ),
             show_fits = self.show_fits or other.show_fits,
             show = self.show or other.show,
@@ -214,7 +216,7 @@ class LifetimeSpectrum:
 
         p = lambda x: inspect.Parameter(x, inspect.Parameter.POSITIONAL_OR_KEYWORD)
 
-        convolved_decay.__signature__ = inspect.Signature([
+        setattr(convolved_decay, "__signature__", inspect.Signature([
             p("t"), p("N"), p(f"t0"), p(f"background"),
             *[p(f"lifetime_{i}") for i in range(1, self.n_l+1)],
             *[p(f"intensity_{i}") for i in range(1, self.n_l+1)],
@@ -223,7 +225,7 @@ class LifetimeSpectrum:
             *[p(f"res_intensity_{j}") for j in range(1, self.n_r+1)],
             *[p(f"res_h_{j}") for j in range(1, self.n_r+1)],
             *[p(f"res_t0_{j}") for j in range(1, self.n_r+1)],
-        ])
+        ]))
 
         def dfunc(params, data, weights, t):
             N = params["N"]
@@ -293,9 +295,9 @@ class LifetimeSpectrum:
             ], axis=0)
 
             l = self.l_vary.copy()
-            l[-1] = False
+            l[self.l_last_vary_idx] = False
             r = self.r_vary.copy()
-            r[-1] = False
+            r[self.r_last_vary_idx] = False
 
             df_dh_i = []
 
@@ -331,43 +333,36 @@ class LifetimeSpectrum:
 
                 df_dres_h_j.append(np.sum(df_dres_h_k, axis=0))
 
-            mask = [params[p].vary for p in ["N", "t0", "background"]]
-
-            for i in range(1, self.n_l+1):
-                mask.append(params[f"lifetime_{i}"].vary)
-                mask.append(l[i-1])
-
-            for j in range(1, self.n_r+1):
-                mask.append(params[f"res_sigma_{j}"].vary)
-                mask.append(r[j-1])
-                mask.append(params[f"res_t0_{j}"].vary)
-
-            out = [df_dN, df_dt0, df_dbackground]
-
-            for i in range(1, self.n_l+1):
-                out.append(
-                    np.sum(
+            out = {
+                "N": df_dN,
+                "t0": df_dt0,
+                "background": df_dbackground,
+                **{
+                    f"lifetime_{i}": np.sum(
                         [deriv[f"{i}_{j}"][1] for j in range(1, self.n_r+1)], axis=0
-                    )
-                )
-                out.append(df_dh_i[i-1])
-
-            for j in range(1, self.n_r+1):
-                out.append(
-                    np.sum(
+                    ) for i in range(1, self.n_l+1)
+                },
+                **{
+                    f"h_{i}": df_dh_i[i-1] for i in range(1, self.n_l+1)
+                },
+                **{
+                    f"res_sigma_{j}": np.sum(
                         [deriv[f"{i}_{j}"][2] for i in range(1, self.n_l+1)], axis=0
-                    )
-                )
-                out.append(df_dres_h_j[j-1])
-                out.append(
-                    np.sum(
+                    ) for j in range(1, self.n_r+1)
+                },
+                **{
+                    f"res_h_{j}": df_dres_h_j[j-1] for j in range(1, self.n_r+1)
+                },
+                **{
+                    f"res_t0_{j}": np.sum(
                         [deriv[f"{i}_{j}"][3] for i in range(1, self.n_l+1)], axis=0
-                    )
-                )
+                    ) for j in range(1, self.n_r+1)
+                }
+            }
 
-            out = np.array(out)
+            out = np.array([out[name] for name, param in params.items() if param.vary])
 
-            return -out[mask] * weights
+            return -out * weights
 
         model = lmfit.Model(convolved_decay)
         params = lmfit.Parameters()
@@ -405,7 +400,7 @@ class LifetimeSpectrum:
             param.name = f"h_{i}"
             param.min = min(max(param.min, 0), 1)
             param.max = max(min(param.max, 1), 0)
-            if self.n_l == 1 or i == self.l_last_vary_idx + 1:
+            if i == self.l_last_vary_idx + 1:
                 param.value = 1
                 param.vary = False
             params.add(deepcopy(param))
@@ -427,13 +422,16 @@ class LifetimeSpectrum:
             param.name = f"res_h_{j}"
             param.min = min(max(param.min, 0), 1)
             param.max = max(min(param.max, 1), 0)
-            if self.n_r == 1 or (j == self.r_last_vary_idx + 1 and self.n_r > 1) :
+            if j == self.r_last_vary_idx + 1:
                 param.value = 1
                 param.vary = False
             params.add(deepcopy(param))
 
             param = res.t0
             param.name = f"res_t0_{j}"
+            if j == 1:
+                param.value = 0
+                param.vary = False
             params.add(deepcopy(param))
 
         return model, params, dfunc
@@ -451,7 +449,7 @@ class LifetimeSpectrum:
             fig.suptitle(f"Background Determination (Close Plot to Confirm)\n{self.name}")
 
             left_bg_idx = left_bg_idx or 0
-            right_bg_idx = right_bg_idx or self.spectrum.shape[0] - 1
+            right_bg_idx = right_bg_idx or len(self.spectrum) - 1
 
             axs[0].semilogy(self.spectrum)
             l_lim = axs[0].axvline(left_bg_idx, c="C1")
@@ -469,7 +467,7 @@ class LifetimeSpectrum:
 
             fig.subplots_adjust(bottom=0.25)
 
-            slider_ax = fig.add_axes([0.20, 0.1, 0.60, 0.03])
+            slider_ax = fig.add_axes((0.20, 0.1, 0.60, 0.03))
             slider = RangeSlider(
                 slider_ax,
                 "Background Range",
@@ -574,7 +572,7 @@ class LifetimeSpectrum:
         """
         err = "LifetimeSpectrum is missing {}. Could not fit"
         assert self.spectrum is not None, err.format("spectrum data")
-        assert self.times is not None, err.format("time calibration")
+        assert self.times is not None and self.tcal is not None, err.format("time calibration")
         assert self.model is not None, err.format("fit model")
 
         # Initial Guesses
@@ -583,7 +581,7 @@ class LifetimeSpectrum:
         n = np.sum(self.spectrum) * 2
         shift = self.times[t0_idx]
 
-        peak_range = slice(max(peak_center_guess_idx-15, 0), peak_center_guess_idx+15)
+        peak_range = slice(peak_center_guess_idx-15, peak_center_guess_idx+15)
         peak = self.spectrum[peak_range]
         peak_times = self.times[peak_range]
 
@@ -659,22 +657,24 @@ class LifetimeSpectrum:
             params[f"h_{i}"].value if v else params[f"intensity_{i}"].value
             for i, v in enumerate(self.l_vary, 1)
         ]
+        h = l_int.copy()
         l_dint = [
             may_be_nan(params[f"h_{i}"].stderr)
             for i in range(1, self.n_l+1)
         ]
-        l_cumul = sum(i * (not v) for i, v in zip(l_int, self.l_vary))
+        dh = l_dint.copy()
+        l_cumul = sum(i for i, v in zip(l_int, self.l_vary) if not v)
         l_cumul_sq_err = 0
-        a, b = 0, 0
         for i in range(self.n_l):
             if self.l_vary[i]:
-                h_i = l_int[i]
                 l_int[i] *= max(1 - l_cumul, 0)
                 l_cumul += l_int[i]
-                l_cumul_sq_err += (l_dint[i]/h_i)**2
-                l_dint[i] = l_int[i] * np.sqrt(l_cumul_sq_err)
-                a, b = b, l_dint[i]
-        l_dint[self.l_last_vary_idx] = a
+                l_dint[i] = l_int[i] * np.sqrt(
+                    l_cumul_sq_err + (dh[i] / h[i])**2
+                )
+                if i == self.l_last_vary_idx:
+                    break
+                l_cumul_sq_err += (dh[i] / (1 - h[i]))**2
 
         for i in range(1, self.n_l+1):
             params[f"intensity_{i}"] = param = params.pop(f"h_{i}")
@@ -687,22 +687,24 @@ class LifetimeSpectrum:
             params[f"res_h_{j}"].value if v else params[f"res_intensity_{j}"].value
             for j, v in enumerate(self.r_vary, 1)
         ]
+        h = r_int.copy()
         r_dint = [
             may_be_nan(params[f"res_h_{j}"].stderr)
             for j in range(1, self.n_r+1)
         ]
-        r_cumul = sum(i * (not v) for i, v in zip(r_int, self.r_vary))
+        dh = r_dint.copy()
+        r_cumul = sum(i for i, v in zip(r_int, self.r_vary) if not v)
         r_cumul_sq_err = 0
-        a, b = 0, 0
         for j in range(self.n_r):
             if self.r_vary[j]:
-                h_j = r_int[j]
                 r_int[j] *= max(1 - r_cumul, 0)
                 r_cumul += r_int[j]
-                r_cumul_sq_err += (r_dint[j]/h_j)**2
-                r_dint[j] = r_int[j] * np.sqrt(r_cumul_sq_err)
-                a, b = b, r_dint[j]
-        r_dint[self.r_last_vary_idx] = a
+                r_dint[j] = r_int[j] * np.sqrt(
+                    r_cumul_sq_err + (dh[j] / h[j])**2
+                )
+                if j == self.r_last_vary_idx:
+                    break
+                r_cumul_sq_err += (dh[j] / (1 - h[j]))**2
 
         for j in range(1, self.n_r+1):
             params[f"res_intensity_{j}"] = param = params.pop(f"res_h_{j}")
@@ -760,7 +762,7 @@ class LifetimeSpectrum:
             self.plot_fit_result()
 
         self.model = parse_model({
-            k: [v.value, v.vary, v.min, v.max] for k, v in params.items()
+            k: (v.value, v.vary, v.min, v.max) for k, v in params.items()
         })
 
         return self.fit_result
@@ -802,7 +804,7 @@ class LifetimeSpectrum:
 
         gs = GridSpec(2, 2, height_ratios=[1, 4])
         ax1 = fig.add_subplot(gs[0, 0])
-        ax2 = fig.add_subplot(gs[1, 0])
+        ax2 = fig.add_subplot(gs[1, 0], sharex=ax1)
         ax3 = fig.add_subplot(gs[:, 1])
 
         ax2.set_xlabel("Time [ps]")
@@ -810,7 +812,8 @@ class LifetimeSpectrum:
 
         ax1.set_ylabel("Residuals")
 
-        ax1.scatter(self.trimmed_times, self.fit_result.residual, s=1)
+        if self.fit_result.residual is not None:
+            ax1.scatter(self.trimmed_times, self.fit_result.residual, s=1)
 
         ax2.scatter(self.trimmed_times, self.trimmed_spectrum, label="Data", s=1)
 
@@ -825,7 +828,7 @@ class LifetimeSpectrum:
         )
 
         ax2.set_yscale("log")
-        ax2.set_ylim([1, np.max(self.trimmed_spectrum) * 1.5])
+        #ax2.set_ylim((1, np.max(self.trimmed_spectrum) * 1.5))
 
         params = self.fit_result.params
 
@@ -848,12 +851,12 @@ class LifetimeSpectrum:
             y += c
             components.append(c)
 
-        for i, c in enumerate(components):
+        for i, c in enumerate(components, 1):
             ax3.semilogy(t, c, label=f"Component {i}")
         ax3.semilogy(t, y, label="Total")
         ax3.set_title("Resolution Components")
         ax3.set_xlabel("Time [ps]")
-        ax3.set_ylim([1e-6, np.max(y)*1.1])
+        ax3.set_ylim((1e-6, np.max(y)*1.1))
 
         if show:
             ax1.grid()
