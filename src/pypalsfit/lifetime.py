@@ -804,11 +804,11 @@ class LifetimeSpectrum:
                 l_int[i] *= max(1 - l_cumul, 0)
                 l_cumul += l_int[i]
                 l_dint[i] = l_int[i] * np.sqrt(
-                    l_cumul_sq_err + (dh[i] / h[i])**2
+                    l_cumul_sq_err + (dh[i] / (h[i] + 1e-12))**2
                 )
                 if i == self.l_last_vary_idx:
                     break
-                l_cumul_sq_err += (dh[i] / (1 - h[i]))**2
+                l_cumul_sq_err += (dh[i] / (1 - h[i] + 1e-12))**2
 
         for i in range(1, self.n_l+1):
             params[f"intensity_{i}"] = param = params.pop(f"h_{i}")
@@ -834,11 +834,11 @@ class LifetimeSpectrum:
                 r_int[j] *= max(1 - r_cumul, 0)
                 r_cumul += r_int[j]
                 r_dint[j] = r_int[j] * np.sqrt(
-                    r_cumul_sq_err + (dh[j] / h[j])**2
+                    r_cumul_sq_err + (dh[j] / (h[j] + 1e-12))**2
                 )
                 if j == self.r_last_vary_idx:
                     break
-                r_cumul_sq_err += (dh[j] / (1 - h[j]))**2
+                r_cumul_sq_err += (dh[j] / (1 - h[j] + 1e-12))**2
 
         for j in range(1, self.n_r+1):
             params[f"res_intensity_{j}"] = param = params.pop(f"res_h_{j}")
@@ -941,28 +941,14 @@ class LifetimeSpectrum:
         ax2 = fig.add_subplot(gs[1, 0], sharex=ax1)
         ax3 = fig.add_subplot(gs[:, 1])
 
-        ax2.set_xlabel("Time [ps]")
-        ax2.set_ylabel("Counts")
+        ### Residuals
 
         ax1.set_ylabel("Residuals")
 
         if self.fit_result.residual is not None:
             ax1.scatter(self.trimmed_times, self.fit_result.residual, s=1)
 
-        ax2.scatter(self.trimmed_times, self.trimmed_spectrum, label="Data", s=1)
-
-        if show_init:
-            ax2.plot(
-                self.trimmed_times, self.fit_result.init_fit, linestyle="--",
-                c="C1", label="Initial Fit"
-            )
-        ax2.plot(
-            self.trimmed_times, self.fit_result.best_fit, linestyle="-",
-            c="r", label="Best Fit"
-        )
-
-        ax2.set_yscale("log")
-        #ax2.set_ylim((1, np.max(self.trimmed_spectrum) * 1.5))
+        ### Resolution Function and Components
 
         params = self.fit_result.params
 
@@ -973,8 +959,8 @@ class LifetimeSpectrum:
         right_ranges = [t_shift + sig for t_shift, sig in zip(t_shifts, sigmas)]
 
         t = np.arange(np.min(left_ranges) - 100, np.max(right_ranges) + 100)
-        y = np.zeros_like(t)
-        components = []
+        res = np.zeros_like(t)
+        res_components = []
 
         for j in range(1, self.n_r+1):
             sig = params[f"res_sigma_{j}"].value
@@ -982,15 +968,62 @@ class LifetimeSpectrum:
             i = params[f"res_intensity_{j}"].value
 
             c = i * gauss(t, t0, sig)
-            y += c
-            components.append(c)
+            res += c
+            res_components.append(c)
 
-        for i, c in enumerate(components, 1):
+        for i, c in enumerate(res_components, 1):
             ax3.semilogy(t, c, label=f"Component {i}")
-        ax3.semilogy(t, y, label="Total")
+        ax3.semilogy(t, res, label="Total")
         ax3.set_title("Resolution Components")
         ax3.set_xlabel("Time [ps]")
-        ax3.set_ylim((1e-6, np.max(y)*1.1))
+        ax3.set_ylim((1e-6, np.max(res)*1.1))
+
+        ### Lifetime Spectrum and Components
+
+        ax2.set_xlabel("Time [ps]")
+        ax2.set_ylabel("Counts")
+
+        ax2.scatter(self.trimmed_times, self.trimmed_spectrum, label="Data", s=1)
+
+        if show_init:
+            ax2.plot(
+                self.trimmed_times, self.fit_result.init_fit, linestyle="--",
+                c="C1", label="Initial Fit"
+            )
+
+        ax2.plot(
+            self.trimmed_times, self.fit_result.best_fit, linestyle="-",
+            c="C2", label="Best Fit"
+        )
+
+        ax2.set_yscale("log")
+
+        ylim = ax2.get_ylim()
+
+        t = self.trimmed_times
+        lt_components = []
+
+        for i in range(1, self.n_l+1):
+            y = np.zeros_like(t)
+            for j in range(1, self.n_r+1):
+                l_tau = params[f"lifetime_{i}"]
+                l_i = params[f"intensity_{i}"]
+                r_sigma = params[f"res_sigma_{j}"]
+                r_i = params[f"res_intensity_{j}"]
+                r_t0 = params[f"res_t0_{j}"]
+                # e becomes numerically unstable for lifetimes ~ tcal[1]
+                _t = t - r_t0
+                a = -_t / l_tau + (r_sigma/(sqrt_2*l_tau))**2
+                b = r_sigma / (l_tau * sqrt_2) - _t / (r_sigma * sqrt_2)
+                e = np.exp(a)
+                c = erfc(b)
+                y += l_i * r_i / (2*l_tau) * e * c
+            lt_components.append(y * params["N"] + params["background"])
+
+        for i, c in enumerate(lt_components, 1):
+            ax2.semilogy(t, c, label=f"Component {i}", c=f"C{i+2}")
+
+        ax2.set_ylim(ylim)
 
         if show:
             ax1.grid()
@@ -998,6 +1031,7 @@ class LifetimeSpectrum:
             ax3.grid()
             ax2.legend()
             ax3.legend()
+            plt.tight_layout()
             plt.show()
 
         return fig, (ax1, ax2)
@@ -1022,7 +1056,11 @@ class LifetimeSpectrum:
             table_data = np.array([
                 [
                     p.name if not p.name.startswith("res_") else p.name[4:],
-                    f"{100 * p.value:.1f}" if "int" in p.name else f"{p.value:.4g}",
+                    (
+                        f"{100 * p.value:.1f}" if "int" in p.name else
+                        f"{p.value:.2f}" if "life" in p.name else
+                        f"{p.value:.4g}"
+                    ),
                     (
                         (f"{100 * p.stderr:.1f}" if "int" in p.name else f"{p.stderr:.4g}")
                         if p.stderr is not None else "nan"
