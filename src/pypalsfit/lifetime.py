@@ -436,33 +436,103 @@ class LifetimeSpectrum:
 
         return model, params, dfunc
 
-    def get_bg(
+    def get_fit_range(
         self,
-        left_bg_idx: None | int = None,
-        right_bg_idx: None | int = None,
-    ) -> float:
+        left_fit_idx: None | int = None,
+        right_fit_idx: None | int = None,
+    ) -> Tuple[int, int]:
+        # TODO: Outsource plotting code to a shared function (share with self.get_bg)
         assert self.spectrum is not None
 
-        if left_bg_idx is None or right_bg_idx is None:
+        if left_fit_idx is None or right_fit_idx is None:
             fig, axs = plt.subplots(1, 2)
 
-            fig.suptitle(f"Background Determination (Close Plot to Confirm)\n{self.name}")
+            fig.suptitle(f"Fit Range Determination (Close Plot to Confirm)\n{self.name}")
 
-            left_bg_idx = left_bg_idx or 0
-            right_bg_idx = right_bg_idx or len(self.spectrum) - 1
+            left_fit_idx = left_fit_idx or 0
+            right_fit_idx = right_fit_idx or len(self.spectrum) - 1
 
             axs[0].semilogy(self.spectrum)
-            l_lim = axs[0].axvline(left_bg_idx, c="C1")
-            u_lim = axs[0].axvline(right_bg_idx, c="C1")
+            l_lim = axs[0].axvline(left_fit_idx, c="C1")
+            u_lim = axs[0].axvline(right_fit_idx, c="C1")
             axs[0].set_xlabel("Channel")
             axs[0].set_ylabel("Counts")
             axs[0].set_title("Entire Spectrum")
 
             bg_img, = axs[1].semilogy(
-                np.linspace(0, 1, right_bg_idx - left_bg_idx),
-                self.spectrum[left_bg_idx:right_bg_idx]
+                np.linspace(0, 1, right_fit_idx - left_fit_idx),
+                self.spectrum[left_fit_idx:right_fit_idx]
             )
-            avg = np.mean(self.spectrum[left_bg_idx:right_bg_idx])
+            axs[1].set_title("Fit Region")
+
+            fig.subplots_adjust(bottom=0.25)
+
+            slider_ax = fig.add_axes((0.20, 0.1, 0.60, 0.03))
+            slider = RangeSlider(
+                slider_ax,
+                "Fit Range",
+                left_fit_idx,
+                right_fit_idx,
+                valinit=(left_fit_idx, right_fit_idx),
+            )
+
+            lower_lim = [left_fit_idx]
+            upper_lim = [right_fit_idx]
+
+            def update(val):
+                lower_lim[0] = left_fit_idx = int(slider.val[0])
+                upper_lim[0] = right_fit_idx = int(slider.val[1])
+
+                l_lim.set_xdata([left_fit_idx] * 2)
+                u_lim.set_xdata([right_fit_idx] * 2)
+
+                ydata = self.spectrum[left_fit_idx:right_fit_idx]
+                xdata = np.linspace(0, 1, right_fit_idx - left_fit_idx)
+
+                axs[1].set_title("Fit Region")
+
+                bg_img.set_ydata(ydata)
+                bg_img.set_xdata(xdata)
+
+                fig.canvas.draw_idle()
+
+            slider.on_changed(update)
+
+            plt.show()
+
+            left_fit_idx = lower_lim[0]
+            right_fit_idx = upper_lim[0]
+
+        return (left_fit_idx, right_fit_idx)
+
+    def get_bg(
+        self,
+        bg_start_idx: None | int = None,
+        bg_end_idx: None | int = None,
+    ) -> float:
+        # TODO: Outsource plotting code to a shared function (share with self.get_fit_range)
+        assert self.spectrum is not None
+
+        if bg_start_idx is None or bg_end_idx is None:
+            fig, axs = plt.subplots(1, 2)
+
+            fig.suptitle(f"Background Determination (Close Plot to Confirm)\n{self.name}")
+
+            bg_start_idx = bg_start_idx or 0
+            bg_end_idx = bg_end_idx or len(self.spectrum) - 1
+
+            axs[0].semilogy(self.spectrum)
+            l_lim = axs[0].axvline(bg_start_idx, c="C1")
+            u_lim = axs[0].axvline(bg_end_idx, c="C1")
+            axs[0].set_xlabel("Channel")
+            axs[0].set_ylabel("Counts")
+            axs[0].set_title("Entire Spectrum")
+
+            bg_img, = axs[1].semilogy(
+                np.linspace(0, 1, bg_end_idx - bg_start_idx),
+                self.spectrum[bg_start_idx:bg_end_idx]
+            )
+            avg = np.mean(self.spectrum[bg_start_idx:bg_end_idx])
             axs[1].set_title(f"Background Region\nAverage Counts: {avg:.4f}")
 
             fig.subplots_adjust(bottom=0.25)
@@ -471,23 +541,23 @@ class LifetimeSpectrum:
             slider = RangeSlider(
                 slider_ax,
                 "Background Range",
-                left_bg_idx,
-                right_bg_idx,
-                valinit=(left_bg_idx, right_bg_idx),
+                bg_start_idx,
+                bg_end_idx,
+                valinit=(bg_start_idx, bg_end_idx),
             )
 
-            lower_lim = [left_bg_idx]
-            upper_lim = [right_bg_idx]
+            lower_lim = [bg_start_idx]
+            upper_lim = [bg_end_idx]
 
             def update(val):
-                lower_lim[0] = left_bg_idx = int(slider.val[0])
-                upper_lim[0] = right_bg_idx = int(slider.val[1])
+                lower_lim[0] = bg_start_idx = int(slider.val[0])
+                upper_lim[0] = bg_end_idx = int(slider.val[1])
 
-                l_lim.set_xdata([left_bg_idx] * 2)
-                u_lim.set_xdata([right_bg_idx] * 2)
+                l_lim.set_xdata([bg_start_idx] * 2)
+                u_lim.set_xdata([bg_end_idx] * 2)
 
-                ydata = self.spectrum[left_bg_idx:right_bg_idx]
-                xdata = np.linspace(0, 1, right_bg_idx - left_bg_idx)
+                ydata = self.spectrum[bg_start_idx:bg_end_idx]
+                xdata = np.linspace(0, 1, bg_end_idx - bg_start_idx)
 
                 axs[1].set_title(f"Background Region\nAverage Counts: {np.mean(ydata):.4f}")
 
@@ -500,10 +570,10 @@ class LifetimeSpectrum:
 
             plt.show()
 
-            left_bg_idx = lower_lim[0]
-            right_bg_idx = upper_lim[0]
+            bg_start_idx = lower_lim[0]
+            bg_end_idx = upper_lim[0]
 
-        return float(np.mean(self.spectrum[left_bg_idx:right_bg_idx]))
+        return float(np.mean(self.spectrum[bg_start_idx:bg_end_idx]))
 
     def fit(
         self,
@@ -515,10 +585,13 @@ class LifetimeSpectrum:
         fit_end_time: int | float | None = None,
         fit_start_idx: int | None = None,
         fit_end_idx: int | None = None,
+        fit_start_counts: int | None = None,
+        fit_end_counts: int | None = None,
+        get_fit_range: bool = False,
         channel_mask: EllipsisType | Sequence[bool | int] = ...,
         use_jacobian: bool = True,
-        left_bg_idx: int | None = None,
-        right_bg_idx: int | None = None,
+        bg_start_idx: int | None = None,
+        bg_end_idx: int | None = None,
         get_bg: bool = False,
         **kwargs
     ) -> lmfit.model.ModelResult:
@@ -526,47 +599,72 @@ class LifetimeSpectrum:
 
         Parameters
         ----------
-        fit_channels_left_of_peak : int
-            How many channels to the left of the peak to use for fitting.
-            The default is 500.
-        fit_channels_right_of_peak : int
-            How many channels to the right of the peak to use for fitting.
-            The default is 3000.
-        left_fit_idx : int or None
-            Channel index in the uncut spectrum that marks the beginning of the
-            part to use for the fit. If provided, `fit_channels_left_of_peak` is
-            ignored. If None, `fit_channels_left_of_peak` is used instead.
-            The default is None.
-        right_fit_idx : int or None
-            Channel index in the uncut spectrum that marks the end of the
-            part to use for the fit. If provided, `fit_channels_right_of_peak`
-            is ignored. If None, `fit_channels_right_of_peak` is used instead.
-            The default is None.
-        channel_mask : Sequence of bool or Sequence of int or Ellipsis
+        fit_time_left_of_peak : int
+            Time in units of the time calibration to the left of the peak
+            maximum to use for fitting. Is overridden by any of the following
+            start parameters. The default is 300.
+        fit_time_right_of_peak : int
+            Same as `fit_time_left_of_peak` but to the right of the peak. Is
+            overridden by any of the following end parameters. The default is
+            3000.
+        fit_channels_left_of_peak : int or None, optional
+            Number of channels to the left of the peak maximum to use for
+            fitting. Overrides any previous start parameters. Is overridden by
+            any of the following start parameters.
+        fit_channels_right_of_peak : int or None, optional
+            Same as `fit fit_channels_left_of_peak` but to the right of the
+            peak. Overrides any previous end parameters. Is overridden by any
+            of the following end parameters.
+        fit_start_time : int or float or None, optional
+            Time in units of the time calibration to use as the beginning of
+            the range used for fitting. Overrides any previous start
+            parameters. Is overridden by any of the following start parameters.
+        fit_end_time : int or float or None, optional
+            Time in units of the time calibration to use as the end of
+            the range used for fitting. Overrides any previous end parameters.
+            Is overridden by any of the following end parameters.
+        fit_start_idx : int or None, optional
+            Channel index to use as the beginning of the range used for
+            fitting. Overrides any previous start parameters. Is overridden by
+            any of the following start parameters.
+        fit_end_idx : int or None, optional
+            Channel index to use as the end of the range used for fitting.
+            Overrides any previous end parameters. Is overridden by any of the
+            following end parameters.
+        fit_start_counts : int or None, optional
+            Threshold of counts defining the beginning of the fit range to the
+            left of the peak maximum. Overrides any previous start parameters.
+        fit_end_counts : int or None, optional
+            Threshold of counts defining the end of the fit range to the right
+            of the peak maximum. Overrides any previous end parameters.
+        get_fit_range: bool, optional
+            Whether to open a fit range determination prompt. The default is
+            False.
+        channel_mask : Sequence of bool or Sequence of int or Ellipsis, optional
             Boolean mask or fancy index set to determine, which parts in the
             cut spectrum to use in the fit and which parts to ignore.
             The default is Ellipsis (use all).
-        use_jacobian : bool
+        use_jacobian : bool, optional
             Whether to use the analytical Jacobian matrix during fitting.
             Using the analytical Jacobian generally reduces the number of
             function evaluations required to find the optimum. If disabled,
             the Jacobian is numerically computed. For more info see the docs of
             the underlying lmfit.Model.fit and scipy.optimize.leastsq
             function. The default is True.
-        left_bg_idx : int or None
+        bg_start_idx : int or None, optional
             Channel index in the uncut spectrum that marks the beginning of
             the region to use to determine the background level. If
-            `left_bg_idx` and `right_bg_idx` are given and `get_bg` is True,
+            `bg_start_idx` and `bg_end_idx` are given and `get_bg` is True,
             the background is taken as the average count per bin in the defined
             region. If either or both parameters are None while `get_bg` is
             True, a background determination prompt is opened. The default is
             None.
-        right_bg_idx : int or None
-            Same as `left_bg_idx` but for marking the end of the background
+        bg_end_idx : int or None, optional
+            Same as `bg_start_idx` but for marking the end of the background
             region. The default is None.
-        get_bg : bool
+        get_bg : bool, optional
             Whether to compute the background level from a given region in the
-            spectrum. If `left_bg_idx` and `right_bg_idx` are given and `get_bg`
+            spectrum. If `bg_start_idx` and `bg_end_idx` are given and `get_bg`
             is True, the background is taken as the average count per bin in the
             defined region. If either or both parameters are None while `get_bg`
             is True, a background determination prompt is opened. If `get_bg` is
@@ -615,7 +713,14 @@ class LifetimeSpectrum:
         def time_to_ch(time):
             return int(time / self.tcal[1] - self.tcal[0])
 
-        def get_abs_idx(sign, abs_ch, abs_time, rel_ch, rel_time):
+        def get_abs_idx(sign, thr, abs_ch, abs_time, rel_ch, rel_time):
+            if thr is not None:
+                start = peak_idx
+                stop = -1 if sign < 0 else len(self.spectrum)
+                for idx in range(start, stop, sign):
+                    if self.spectrum[idx] < thr:
+                        return idx - sign
+
             if abs_ch is not None:
                 return abs_ch
 
@@ -630,15 +735,18 @@ class LifetimeSpectrum:
 
             return None
 
-        left_fit_idx = get_abs_idx(
-            -1, fit_start_idx, fit_start_time,
-            fit_channels_left_of_peak, fit_time_left_of_peak
-        ) or 0
+        if get_fit_range:
+            left_fit_idx, right_fit_idx = self.get_fit_range(fit_start_idx, fit_end_idx)
+        else:
+            left_fit_idx = get_abs_idx(
+                -1, fit_start_counts, fit_start_idx, fit_start_time,
+                fit_channels_left_of_peak, fit_time_left_of_peak
+            ) or 0
 
-        right_fit_idx = get_abs_idx(
-            1, fit_end_idx, fit_end_time,
-            fit_channels_right_of_peak, fit_time_right_of_peak
-        ) or len(self.spectrum) - 1
+            right_fit_idx = get_abs_idx(
+                1, fit_end_counts, fit_end_idx, fit_end_time,
+                fit_channels_right_of_peak, fit_time_right_of_peak
+            ) or len(self.spectrum) - 1
 
         data_range = slice(left_fit_idx, right_fit_idx)
 
@@ -646,8 +754,8 @@ class LifetimeSpectrum:
         self.trimmed_spectrum = self.spectrum[data_range]
 
         bg = None
-        if get_bg or left_bg_idx is not None or right_bg_idx is not None:
-            bg = self.get_bg(left_bg_idx, right_bg_idx)
+        if get_bg or bg_start_idx is not None or bg_end_idx is not None:
+            bg = self.get_bg(bg_start_idx, bg_end_idx)
 
         model, params, dfunc = self.make_model(n, self.peak_center, bg)
 
