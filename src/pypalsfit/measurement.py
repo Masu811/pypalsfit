@@ -12,9 +12,10 @@ import warnings
 import numpy as np
 import scipy
 import matplotlib.pyplot as plt
+import lmfit
 
 from .lifetime import LifetimeSpectrum
-from .model import LifetimeModel
+from .model import LifetimeModel, parse_parameter_tuple, dump_model
 from .utils import Filter, isfinite, _check_input, _split_params, progress
 
 
@@ -2548,6 +2549,206 @@ class MeasurementCampaign:
         else:
             return out
 
+    def shared_fit(
+        self,
+        shared_params: lmfit.Parameters | dict,
+        fit_time_left_of_peak: int | float = 300,
+        fit_time_right_of_peak: int | float = 3000,
+        fit_channels_left_of_peak: int | None = None,
+        fit_channels_right_of_peak: int | None = None,
+        fit_start_time: int | float | None = None,
+        fit_end_time: int | float | None = None,
+        fit_start_idx: int | None = None,
+        fit_end_idx: int | None = None,
+        fit_start_counts: int | None = None,
+        fit_end_counts: int | None = None,
+        get_fit_range: bool = False,
+        use_jacobian: bool = True,
+        bg_start_idx: int | None = None,
+        bg_end_idx: int | None = None,
+        get_bg: bool = False,
+        **kwargs
+    ) -> None:
+        assert self.is_homogeneous()
+        assert isinstance(shared_params, (lmfit.Parameters, dict))
+
+        if isinstance(shared_params, dict):
+            param_dict, shared_params = shared_params, lmfit.Parameters()
+            for param_name, param_attributes in param_dict.items():
+                param_attributes = parse_parameter_tuple(param_attributes)
+                shared_params.add(param_name, *param_attributes)
+
+        shared_p_names = set(shared_params.keys())
+        n_shared = len(shared_params)
+        shared_vary = [shared_params[p].vary for p in shared_params]
+        n_shared_vary = sum(shared_vary)
+
+        # Check if every spectrum's parameters contain all shared params
+        err1 = "Spectrum does not have a model"
+        err2 = "Spectrum does not contain all shared parameters"
+        for m in self:
+            for s in m:
+                assert s.model is not None, err1
+                model_p_names = set(dump_model(s.model).keys())
+                assert shared_p_names <= model_p_names, err2
+
+        # Put together all shared data
+
+        shared_spectrum = []
+        shared_times = []
+
+        shared_func_components = []
+        shared_dfunc_components = []
+
+        separate_p_names = []
+
+        for i, m in enumerate(self):
+            for j, s in enumerate(m):
+                s.prepare_fit(
+                    fit_time_left_of_peak, fit_time_right_of_peak,
+                    fit_channels_left_of_peak, fit_channels_right_of_peak,
+                    fit_start_time, fit_end_time,
+                    fit_start_idx, fit_end_idx,
+                    fit_start_counts, fit_end_counts,
+                    get_fit_range,
+                    bg_start_idx, bg_end_idx,
+                    get_bg,
+                )
+
+                # Concatenate trimmed spectra
+                shared_spectrum.append(s.trimmed_spectrum)
+
+                # concatenate trimmed times with appropriate shifts
+                shared_times.append(s.trimmed_times)
+
+                # Merge all spectra's parameters into one Parameters object
+                model, model_params, model_func, model_dfunc = s.make_model()
+                shared_func_components.append(model_func)
+                shared_dfunc_components.append(model_dfunc)
+                added_names = set()
+                for param_name, param in model_params.items():
+                    if param_name in shared_p_names:
+                        continue
+                    param_name = f"m{i}_d{j}__{param_name}"
+                    shared_params.add(
+                        name = param_name,
+                        value = param.value,
+                        vary = param.vary,
+                        min = param.min,
+                        max = param.max,
+                    )
+                    added_names.add(param_name)
+                separate_p_names.append(shared_p_names | added_names)
+
+        shared_spectrum = np.concatenate(shared_spectrum)
+        lengths = [len(s) for s in shared_times]
+        sections = np.cumsum(lengths)
+
+        # Construct the piecewise defined model function and Jacobian
+
+        def shared_func(**shared_params):
+            idx = 0
+            y = []
+            for m in self:
+                for _ in m:
+                    func = shared_func_components[idx]
+                    t = shared_times[idx]
+                    params = {
+                        p.split("__")[-1]: shared_params[p]
+                        for p in separate_p_names[idx]
+                    }
+                    y.append(func(t, **params))
+                    idx += 1
+
+            return np.concatenate(y)
+
+        def shared_dfunc(shared_params, shared_data, shared_weights):
+            idx = 0
+            tot = shared_spectrum.shape[0]
+            dy = [np.zeros((tot,), float) for _ in range(n_shared_vary)]
+            offset = 0
+            weights = np.split(shared_weights, sections)
+            for m in self:
+                for _ in m:
+                    dfunc = shared_dfunc_components[idx]
+                    t = shared_times[idx]
+                    params = {
+                        p.split("__")[-1]: shared_params[p]
+                        for p in separate_p_names[idx]
+                    }
+                    out = dfunc(params, None, weights[idx], t)
+                    l = out.shape[1]
+                    out = np.pad(
+                        out,
+                        ((0, 0), (offset, tot - offset - l)),
+                        constant_values=(0,)
+                    )
+                    offset += l
+                    idx += 1
+
+                    k = 0
+                    for i in range(n_shared_vary):
+                        dy[k] += out[i]
+
+                    for column in out[n_shared_vary:]:
+                        dy.append(column)
+
+            return np.array(dy)
+
+        shared_model = lmfit.Model(shared_func)
+
+        weights = np.sqrt(1/np.where(shared_spectrum > 0, shared_spectrum, 1))
+
+        if use_jacobian:
+            if "fit_kws" in kwargs:
+                kwargs["fit_kws"].update({"Dfun": shared_dfunc, "col_deriv": True})
+            else:
+                kwargs["fit_kws"] = {"Dfun": shared_dfunc, "col_deriv": True}
+
+        # Perform the shared fit
+
+        shared_result = shared_model.fit(
+            shared_spectrum,
+            params=shared_params,
+            weights=weights,
+            **kwargs
+        )
+
+        separate_init_fits = np.split(shared_result.init_fit, sections)
+        separate_best_fits = np.split(shared_result.best_fit, sections)
+        separate_residuals = np.split(shared_result.residual, sections)
+
+        # Distribute the solution params, init and best fits onto the
+        # individual spectra
+
+        idx = 0
+        for m in self:
+            for s in m:
+                s.fit_result = deepcopy(shared_result)
+
+                s.fit_result.init_fit = separate_init_fits[idx]
+                s.fit_result.best_fit = separate_best_fits[idx]
+                s.fit_result.residual = separate_residuals[idx]
+
+                s.fit_result.params = lmfit.Parameters()
+                for p in separate_p_names[idx]:
+                    param = shared_result.params[p]
+                    param.name = param.name.split("__")[-1]
+                    s.fit_result.params.add(param)
+
+                s.post_fit()
+
+                idx += 1
+
+        # For each spectrum: show fit result plots and fit report
+
+        for m in self:
+            for s in m:
+                if s.verbose:
+                    s.fit_report()
+
+                if s.show_fits or s.show:
+                    s.plot_fit_result()
 
 class MultiCampaign:
     def __init__(

@@ -778,9 +778,12 @@ class LifetimeSpectrum:
             Whether to use the analytical Jacobian matrix during fitting.
             Using the analytical Jacobian generally reduces the number of
             function evaluations required to find the optimum. If disabled,
-            the Jacobian is numerically computed. For more info see the docs of
-            the underlying lmfit.Model.fit and scipy.optimize.leastsq
-            function. The default is True.
+            the Jacobian is numerically computed. A reason for disabling the
+            use of the analytical Jacobian is for example that in the case of
+            relatively strict parameter bounds a fit with analytical Jacobian
+            may fail where a fit without it would still succeed. For more info
+            see the docs of the underlying lmfit.Model.fit and
+            scipy.optimize.leastsq function. The default is True.
         bg_start_idx : int or None, optional
             Channel index in the uncut spectrum that marks the beginning of
             the region to use to determine the background level. If
@@ -996,7 +999,6 @@ class LifetimeSpectrum:
         right_ranges = [t_shift + sig for t_shift, sig in zip(t_shifts, sigmas)]
 
         t_res = np.arange(np.min(left_ranges) - 100, np.max(right_ranges) + 100)
-        res = np.zeros_like(t_res)
         res_components = []
 
         for j in range(1, self.n_r+1):
@@ -1005,7 +1007,6 @@ class LifetimeSpectrum:
             i = params[f"res_intensity_{j}"].value
 
             c = i * gauss(t_res, t0, sig)
-            res += c
             res_components.append(c)
 
         ### Lifetime Components
@@ -1014,7 +1015,7 @@ class LifetimeSpectrum:
         lt_components = []
 
         for i in range(1, self.n_l+1):
-            y = np.zeros_like(t)
+            y = np.zeros_like(t, dtype=float)
             for j in range(1, self.n_r+1):
                 l_tau = params[f"lifetime_{i}"]
                 l_i = params[f"intensity_{i}"]
@@ -1075,8 +1076,11 @@ class LifetimeSpectrum:
 
         ax2.set_xlabel("Time [ps]")
         ax2.set_ylabel("Counts")
+        ax2.set_yscale("log")
 
         ax2.scatter(t, self.trimmed_spectrum, label="Data", s=1)
+
+        ylim = ax2.get_ylim()
 
         if show_init:
             ax2.plot(
@@ -1088,10 +1092,6 @@ class LifetimeSpectrum:
             t, self.fit_result.best_fit, linestyle="-",
             c="C2", label="Best Fit"
         )
-
-        ax2.set_yscale("log")
-
-        ylim = ax2.get_ylim()
 
         for i, c in enumerate(lt_components, 1):
             ax2.semilogy(t, c, label=f"Component {i}", c=f"C{i+2}")
