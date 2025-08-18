@@ -81,6 +81,18 @@ class LifetimeSpectrum:
         self.peak_fwhm = np.nan
         self.dpeak_fwhm = np.nan
 
+        self.bg = np.nan
+
+        self.trimmed_times = None
+        self.trimmed_spectrum = None
+
+        self.n_l = None
+        self.n_r = None
+        self.l_vary = None
+        self.r_vary = None
+        self.l_last_vary_idx = None
+        self.r_last_vary_idx = None
+
         if self.model is not None:
             self.n_l = len(self.model.lifetime_components)
             self.n_r = len(self.model.resolution_components)
@@ -133,53 +145,46 @@ class LifetimeSpectrum:
         new.model = self.model
         return new
 
-    def make_model(
-        self,
-        n: float | int,
-        shift: float | int,
-        bg: float | int | None = None,
-    ) -> Tuple[lmfit.Model, lmfit.Parameters, Callable]:
-        assert self.spectrum is not None
-        assert self.times is not None
+    def make_model_func(self):
         assert self.model is not None
         assert len(self.model.lifetime_components) > 0
         assert len(self.model.resolution_components) > 0
 
-        self.n_l = len(self.model.lifetime_components)
-        self.n_r = len(self.model.resolution_components)
+        self.n_l = n_l = len(self.model.lifetime_components)
+        self.n_r = n_r = len(self.model.resolution_components)
 
-        self.l_vary = [lt.intensity.vary for lt in self.model.lifetime_components]
+        self.l_vary = l_vary = [lt.intensity.vary for lt in self.model.lifetime_components]
         l_vary_idcs = [i for i, vary in enumerate(self.l_vary) if vary]
-        self.l_last_vary_idx = max(l_vary_idcs) if len(l_vary_idcs) > 0 else 0
+        self.l_last_vary_idx = l_last_vary_idx = max(l_vary_idcs) if len(l_vary_idcs) > 0 else 0
 
-        self.r_vary = [res.intensity.vary for res in self.model.resolution_components]
+        self.r_vary = r_vary = [res.intensity.vary for res in self.model.resolution_components]
         r_vary_idcs = [j for j, vary in enumerate(self.r_vary) if vary]
-        self.r_last_vary_idx = max(r_vary_idcs) if len(r_vary_idcs) > 0 else 0
+        self.r_last_vary_idx = r_last_vary_idx = max(r_vary_idcs) if len(r_vary_idcs) > 0 else 0
 
-        def convolved_decay(t, N, t0, background, **kwargs):
+        def func(t, N, t0, background, **kwargs):
             y = np.zeros_like(t, dtype=float)
 
             l_int = [
                 kwargs[f"h_{i}"] if v else kwargs[f"intensity_{i}"]
-                for i, v in enumerate(self.l_vary, 1)
+                for i, v in enumerate(l_vary, 1)
             ]
-            l_cumul = sum(i for i, v in zip(l_int, self.l_vary) if not v)
-            for i in range(self.n_l):
-                if self.l_vary[i]:
+            l_cumul = sum(i for i, v in zip(l_int, l_vary) if not v)
+            for i in range(n_l):
+                if l_vary[i]:
                     l_int[i] *= max(1 - l_cumul, 0)
                     l_cumul += l_int[i]
 
             r_int = [
                 kwargs[f"res_h_{j}"] if v else kwargs[f"res_intensity_{j}"]
-                for j, v in enumerate(self.r_vary, 1)
+                for j, v in enumerate(r_vary, 1)
             ]
-            r_cumul = sum(i for i, v in zip(r_int, self.r_vary) if not v)
-            for j in range(self.n_r):
-                if self.r_vary[j]:
+            r_cumul = sum(i for i, v in zip(r_int, r_vary) if not v)
+            for j in range(n_r):
+                if r_vary[j]:
                     r_int[j] *= max(1 - r_cumul, 0)
                     r_cumul += r_int[j]
 
-            for i, j in product(range(1, self.n_l+1), range(1, self.n_r+1)):
+            for i, j in product(range(1, n_l+1), range(1, n_r+1)):
                 l_tau = kwargs[f"lifetime_{i}"]
                 l_i = l_int[i-1]
                 r_sigma = kwargs[f"res_sigma_{j}"]
@@ -196,13 +201,13 @@ class LifetimeSpectrum:
                 print(f"{N = }")
                 print(f"{t0 = }")
                 print(f"{background = }")
-                for i in range(1, self.n_l+1):
+                for i in range(1, n_l+1):
                     l = kwargs[f"lifetime_{i}"]
                     h = kwargs[f"h_{i}"]
                     print(f"lifetime_{i} = {l}")
                     print(f"h_{i} = {h}")
                     print(f"intensity_{i} = {l_int[i-1]}")
-                for j in range(1, self.n_r+1):
+                for j in range(1, n_r+1):
                     s = kwargs[f"res_sigma_{j}"]
                     h = kwargs[f"res_h_{j}"]
                     t0 = kwargs[f"res_t0_{j}"]
@@ -216,15 +221,15 @@ class LifetimeSpectrum:
 
         p = lambda x: inspect.Parameter(x, inspect.Parameter.POSITIONAL_OR_KEYWORD)
 
-        setattr(convolved_decay, "__signature__", inspect.Signature([
+        setattr(func, "__signature__", inspect.Signature([
             p("t"), p("N"), p(f"t0"), p(f"background"),
-            *[p(f"lifetime_{i}") for i in range(1, self.n_l+1)],
-            *[p(f"intensity_{i}") for i in range(1, self.n_l+1)],
-            *[p(f"h_{i}") for i in range(1, self.n_l+1)],
-            *[p(f"res_sigma_{j}") for j in range(1, self.n_r+1)],
-            *[p(f"res_intensity_{j}") for j in range(1, self.n_r+1)],
-            *[p(f"res_h_{j}") for j in range(1, self.n_r+1)],
-            *[p(f"res_t0_{j}") for j in range(1, self.n_r+1)],
+            *[p(f"lifetime_{i}") for i in range(1, n_l+1)],
+            *[p(f"intensity_{i}") for i in range(1, n_l+1)],
+            *[p(f"h_{i}") for i in range(1, n_l+1)],
+            *[p(f"res_sigma_{j}") for j in range(1, n_r+1)],
+            *[p(f"res_intensity_{j}") for j in range(1, n_r+1)],
+            *[p(f"res_h_{j}") for j in range(1, n_r+1)],
+            *[p(f"res_t0_{j}") for j in range(1, n_r+1)],
         ]))
 
         def dfunc(params, data, weights, t):
@@ -234,30 +239,30 @@ class LifetimeSpectrum:
 
             l_int = [
                 params[f"h_{i}"] if v else params[f"intensity_{i}"]
-                for i, v in enumerate(self.l_vary, 1)
+                for i, v in enumerate(l_vary, 1)
             ]
-            l_cumul = sum(i for i, v in zip(l_int, self.l_vary) if not v)
-            for i in range(self.n_l):
-                if self.l_vary[i]:
+            l_cumul = sum(i for i, v in zip(l_int, l_vary) if not v)
+            for i in range(n_l):
+                if l_vary[i]:
                     l_int[i] *= max(1 - l_cumul, 0)
                     l_cumul += l_int[i]
 
             r_int = [
                 params[f"res_h_{j}"] if v else params[f"res_intensity_{j}"]
-                for j, v in enumerate(self.r_vary, 1)
+                for j, v in enumerate(r_vary, 1)
             ]
-            r_cumul = sum(i for i, v in zip(r_int, self.r_vary) if not v)
-            for j in range(self.n_r):
-                if self.r_vary[j]:
+            r_cumul = sum(i for i, v in zip(r_int, r_vary) if not v)
+            for j in range(n_r):
+                if r_vary[j]:
                     r_int[j] *= max(1 - r_cumul, 0)
                     r_cumul += r_int[j]
 
             terms = {}
             deriv = {}
 
-            f = convolved_decay(t, **params)
+            y = np.zeros_like(t)
 
-            for i, j in product(range(1, self.n_l+1), range(1, self.n_r+1)):
+            for i, j in product(range(1, n_l+1), range(1, n_r+1)):
                 l_tau = params[f"lifetime_{i}"]
                 l_i = l_int[i-1]
                 r_sigma = params[f"res_sigma_{j}"]
@@ -270,6 +275,7 @@ class LifetimeSpectrum:
                 e = np.exp(a)
                 c = erfc(b)
                 decay = N * l_i * r_i / (2*l_tau) * e * c
+                y += decay
                 exp_comb = N * (l_i * r_i) / (sqrt_2_pi * l_tau) * np.exp(a - b**2)
 
                 df_dt0 = -exp_comb / r_sigma + decay / l_tau
@@ -286,27 +292,27 @@ class LifetimeSpectrum:
                     df_dr_t0,
                 ]
 
-            df_dN = (f - background) / N
+            df_dN = (y - background) / N
             df_dbackground = np.ones_like(t, dtype=float)
             df_dt0 = np.sum([
                 deriv[f"{i}_{j}"][0]
-                for j in range(1, self.n_r+1)
-                for i in range(1, self.n_l+1)
+                for j in range(1, n_r+1)
+                for i in range(1, n_l+1)
             ], axis=0)
 
-            l = self.l_vary.copy()
-            l[self.l_last_vary_idx] = False
-            r = self.r_vary.copy()
-            r[self.r_last_vary_idx] = False
+            l = l_vary.copy()
+            l[l_last_vary_idx] = False
+            r = r_vary.copy()
+            r[r_last_vary_idx] = False
 
             df_dh_i = []
 
-            for k in range(1, self.n_l+1):
+            for k in range(1, n_l+1):
                 df_dh_k = []
                 if not l[k-1]:
                     df_dh_i.append(np.zeros_like(t, dtype=float))
                     continue
-                for n, m in product(range(1, self.n_l+1), range(1, self.n_r+1)):
+                for n, m in product(range(1, n_l+1), range(1, n_r+1)):
                     if n < k:
                         continue
                     elif n == k:
@@ -318,12 +324,12 @@ class LifetimeSpectrum:
 
             df_dres_h_j = []
 
-            for k in range(1, self.n_r+1):
+            for k in range(1, n_r+1):
                 df_dres_h_k = []
                 if not r[k-1]:
                     df_dres_h_j.append(np.zeros_like(t, dtype=float))
                     continue
-                for n, m in product(range(1, self.n_l+1), range(1, self.n_r+1)):
+                for n, m in product(range(1, n_l+1), range(1, n_r+1)):
                     if m < k:
                         continue
                     elif m == k:
@@ -339,24 +345,24 @@ class LifetimeSpectrum:
                 "background": df_dbackground,
                 **{
                     f"lifetime_{i}": np.sum(
-                        [deriv[f"{i}_{j}"][1] for j in range(1, self.n_r+1)], axis=0
-                    ) for i in range(1, self.n_l+1)
+                        [deriv[f"{i}_{j}"][1] for j in range(1, n_r+1)], axis=0
+                    ) for i in range(1, n_l+1)
                 },
                 **{
-                    f"h_{i}": df_dh_i[i-1] for i in range(1, self.n_l+1)
+                    f"h_{i}": df_dh_i[i-1] for i in range(1, n_l+1)
                 },
                 **{
                     f"res_sigma_{j}": np.sum(
-                        [deriv[f"{i}_{j}"][2] for i in range(1, self.n_l+1)], axis=0
-                    ) for j in range(1, self.n_r+1)
+                        [deriv[f"{i}_{j}"][2] for i in range(1, n_l+1)], axis=0
+                    ) for j in range(1, n_r+1)
                 },
                 **{
-                    f"res_h_{j}": df_dres_h_j[j-1] for j in range(1, self.n_r+1)
+                    f"res_h_{j}": df_dres_h_j[j-1] for j in range(1, n_r+1)
                 },
                 **{
                     f"res_t0_{j}": np.sum(
-                        [deriv[f"{i}_{j}"][3] for i in range(1, self.n_l+1)], axis=0
-                    ) for j in range(1, self.n_r+1)
+                        [deriv[f"{i}_{j}"][3] for i in range(1, n_l+1)], axis=0
+                    ) for j in range(1, n_r+1)
                 }
             }
 
@@ -364,21 +370,39 @@ class LifetimeSpectrum:
 
             return -out * weights
 
-        model = lmfit.Model(convolved_decay)
+        return func, dfunc
+
+    def make_model(
+        self,
+    ) -> Tuple[lmfit.Model, lmfit.Parameters, Callable, Callable]:
+        assert self.spectrum is not None
+        assert self.times is not None
+        assert self.model is not None
+        assert len(self.model.lifetime_components) > 0
+        assert len(self.model.resolution_components) > 0
+        assert self.l_last_vary_idx is not None
+        assert self.r_last_vary_idx is not None
+
+        func, dfunc = self.make_model_func()
+
+        model = lmfit.Model(func)
         params = lmfit.Parameters()
 
         l = np.min(self.times)
         r = np.max(self.times)
         d = r - l
 
+        # TODO: implement possibility to provide Parameters for N and t0
+        n = np.sum(self.spectrum) * 2
+
         params.add("N", n, min=0)
-        params.add("t0", shift, min=l-d, max=r+d)
+        params.add("t0", self.peak_center, min=l-d, max=r+d)
 
         if self.model.background_component is not None:
             param = self.model.background_component.background
             param.name = "background"
-            if bg is not None:
-                param.value = bg
+            if not np.isnan(self.bg):
+                param.value = self.bg
             params.add(deepcopy(param))
         else:
             params.add("background", 0, vary=False)
@@ -434,7 +458,7 @@ class LifetimeSpectrum:
                 param.vary = False
             params.add(deepcopy(param))
 
-        return model, params, dfunc
+        return model, params, func, dfunc
 
     def get_fit_range(
         self,
@@ -509,7 +533,7 @@ class LifetimeSpectrum:
         self,
         bg_start_idx: None | int = None,
         bg_end_idx: None | int = None,
-    ) -> float:
+    ) -> None:
         # TODO: Outsource plotting code to a shared function (share with self.get_fit_range)
         assert self.spectrum is not None
 
@@ -573,7 +597,113 @@ class LifetimeSpectrum:
             bg_start_idx = lower_lim[0]
             bg_end_idx = upper_lim[0]
 
-        return float(np.mean(self.spectrum[bg_start_idx:bg_end_idx]))
+        self.bg = float(np.mean(self.spectrum[bg_start_idx:bg_end_idx]))
+
+    def get_peak_center(self) -> None:
+        assert self.spectrum is not None
+        assert self.times is not None
+
+        # Initial Guesses
+        peak_center_guess_idx = np.argmax(self.spectrum)
+        t0_idx = np.argmax(self.spectrum)
+        n = np.sum(self.spectrum) * 2
+        shift = self.times[t0_idx]
+
+        peak_range = slice(peak_center_guess_idx-15, peak_center_guess_idx+15)
+        peak = self.spectrum[peak_range]
+        peak_times = self.times[peak_range]
+
+        peak_model = lmfit.models.GaussianModel()
+
+        peak_params = peak_model.make_params()
+
+        peak_params["amplitude"].set(value=n, min=0)
+        peak_params["center"].set(value=shift)
+        peak_params["sigma"].set(value=n/(self.spectrum[t0_idx] * np.sqrt(2*np.pi)))
+
+        peak_result = peak_model.fit(peak, x=peak_times, **peak_params)
+
+        if self.show:
+            peak_result.plot()
+            plt.title("Peak params via gaussian fit")
+            plt.show()
+
+        self.peak_center = peak_result.params["center"].value
+        self.dpeak_center = may_be_nan(peak_result.params["center"].stderr)
+
+        self.peak_fwhm = peak_result.params["sigma"].value * 2.3548
+        self.dpeak_fwhm = may_be_nan(peak_result.params["sigma"].stderr) * 2.3548
+
+    def prepare_fit(
+        self,
+        fit_time_left_of_peak: int | float = 300,
+        fit_time_right_of_peak: int | float = 3000,
+        fit_channels_left_of_peak: int | None = None,
+        fit_channels_right_of_peak: int | None = None,
+        fit_start_time: int | float | None = None,
+        fit_end_time: int | float | None = None,
+        fit_start_idx: int | None = None,
+        fit_end_idx: int | None = None,
+        fit_start_counts: int | None = None,
+        fit_end_counts: int | None = None,
+        get_fit_range: bool = False,
+        bg_start_idx: int | None = None,
+        bg_end_idx: int | None = None,
+        get_bg: bool = False,
+    ) -> None:
+        assert self.spectrum is not None
+        assert self.times is not None
+
+        if np.isnan(self.peak_center):
+            self.get_peak_center()
+
+        peak_idx = np.searchsorted(self.times, self.peak_center)
+
+        def time_to_ch(time):
+            return int(time / self.tcal[1] - self.tcal[0])
+
+        def get_abs_idx(sign, thr, abs_ch, abs_time, rel_ch, rel_time):
+            if thr is not None:
+                start = peak_idx
+                stop = -1 if sign < 0 else len(self.spectrum)
+                for idx in range(start, stop, sign):
+                    if self.spectrum[idx] < thr:
+                        return idx - sign
+
+            if abs_ch is not None:
+                return abs_ch
+
+            if abs_time is not None:
+                return time_to_ch(abs_time)
+
+            if rel_ch is not None:
+                return peak_idx + sign * rel_ch
+
+            if rel_time is not None:
+                return time_to_ch(self.peak_center + sign * rel_time)
+
+            return None
+
+        if get_fit_range:
+            left_fit_idx, right_fit_idx = self.get_fit_range(fit_start_idx, fit_end_idx)
+        else:
+            left_fit_idx = get_abs_idx(
+                -1, fit_start_counts, fit_start_idx, fit_start_time,
+                fit_channels_left_of_peak, fit_time_left_of_peak
+            ) or 0
+
+            right_fit_idx = get_abs_idx(
+                1, fit_end_counts, fit_end_idx, fit_end_time,
+                fit_channels_right_of_peak, fit_time_right_of_peak
+            ) or len(self.spectrum) - 1
+
+        data_range = slice(left_fit_idx, right_fit_idx)
+
+        self.trimmed_times = self.times[data_range]
+        self.trimmed_spectrum = self.spectrum[data_range]
+
+        if get_bg or bg_start_idx is not None or bg_end_idx is not None:
+            self.get_bg(bg_start_idx, bg_end_idx)
 
     def fit(
         self,
@@ -677,95 +807,35 @@ class LifetimeSpectrum:
         assert self.times is not None and self.tcal is not None, err.format("time calibration")
         assert self.model is not None, err.format("fit model")
 
-        # Initial Guesses
-        peak_center_guess_idx = np.argmax(self.spectrum)
-        t0_idx = np.argmax(self.spectrum)
-        n = np.sum(self.spectrum) * 2
-        shift = self.times[t0_idx]
+        self.prepare_fit(
+            fit_time_left_of_peak, fit_time_right_of_peak,
+            fit_channels_left_of_peak, fit_channels_right_of_peak,
+            fit_start_time, fit_end_time,
+            fit_start_idx, fit_end_idx,
+            fit_start_counts, fit_end_counts,
+            get_fit_range,
+            bg_start_idx, bg_end_idx,
+            get_bg,
+        )
 
-        peak_range = slice(peak_center_guess_idx-15, peak_center_guess_idx+15)
-        peak = self.spectrum[peak_range]
-        peak_times = self.times[peak_range]
+        assert self.trimmed_spectrum is not None
+        assert self.trimmed_times is not None
 
-        peak_model = lmfit.models.GaussianModel()
-
-        peak_params = peak_model.make_params()
-
-        peak_params["amplitude"].set(value=n, min=0)
-        peak_params["center"].set(value=shift)
-        peak_params["sigma"].set(value=n/(self.spectrum[t0_idx] * np.sqrt(2*np.pi)))
-
-        peak_result = peak_model.fit(peak, x=peak_times, **peak_params)
-
-        if self.show:
-            peak_result.plot()
-            plt.title("Peak params via gaussian fit")
-            plt.show()
-
-        self.peak_center = peak_result.params["center"].value
-        self.dpeak_center = may_be_nan(peak_result.params["center"].stderr)
-
-        self.peak_fwhm = peak_result.params["sigma"].value * 2.3548
-        self.dpeak_fwhm = may_be_nan(peak_result.params["sigma"].stderr) * 2.3548
-
-        peak_idx = np.searchsorted(self.times, self.peak_center)
-
-        def time_to_ch(time):
-            return int(time / self.tcal[1] - self.tcal[0])
-
-        def get_abs_idx(sign, thr, abs_ch, abs_time, rel_ch, rel_time):
-            if thr is not None:
-                start = peak_idx
-                stop = -1 if sign < 0 else len(self.spectrum)
-                for idx in range(start, stop, sign):
-                    if self.spectrum[idx] < thr:
-                        return idx - sign
-
-            if abs_ch is not None:
-                return abs_ch
-
-            if abs_time is not None:
-                return time_to_ch(abs_time)
-
-            if rel_ch is not None:
-                return peak_idx + sign * rel_ch
-
-            if rel_time is not None:
-                return time_to_ch(self.peak_center + sign * rel_time)
-
-            return None
-
-        if get_fit_range:
-            left_fit_idx, right_fit_idx = self.get_fit_range(fit_start_idx, fit_end_idx)
-        else:
-            left_fit_idx = get_abs_idx(
-                -1, fit_start_counts, fit_start_idx, fit_start_time,
-                fit_channels_left_of_peak, fit_time_left_of_peak
-            ) or 0
-
-            right_fit_idx = get_abs_idx(
-                1, fit_end_counts, fit_end_idx, fit_end_time,
-                fit_channels_right_of_peak, fit_time_right_of_peak
-            ) or len(self.spectrum) - 1
-
-        data_range = slice(left_fit_idx, right_fit_idx)
-
-        self.trimmed_times = self.times[data_range]
-        self.trimmed_spectrum = self.spectrum[data_range]
-
-        bg = None
-        if get_bg or bg_start_idx is not None or bg_end_idx is not None:
-            bg = self.get_bg(bg_start_idx, bg_end_idx)
-
-        model, params, dfunc = self.make_model(n, self.peak_center, bg)
+        model, params, func, dfunc = self.make_model()
 
         weights = np.sqrt(1/np.where(self.trimmed_spectrum > 0, self.trimmed_spectrum, 1))
 
         if self.show:
             plt.figure()
             plt.title("Cut out spectrum and initial guess for fit")
-            plt.semilogy(self.trimmed_times, self.trimmed_spectrum, label="Data")
-            plt.semilogy(self.trimmed_times, model.eval(t=self.trimmed_times, **params), label="Initial Guess")
+            plt.semilogy(
+                self.trimmed_times, self.trimmed_spectrum, label="Data"
+            )
+            plt.semilogy(
+                self.trimmed_times,
+                model.eval(t=self.trimmed_times, **params),
+                label="Initial Guess"
+            )
             plt.grid()
             plt.legend()
             plt.tight_layout()
@@ -784,6 +854,21 @@ class LifetimeSpectrum:
             weights=weights[channel_mask],
             **kwargs
         )
+
+        self.post_fit()
+
+        if self.verbose:
+            self.fit_report()
+
+        if self.show_fits or self.show:
+            self.plot_fit_result()
+
+        return self.fit_result
+
+    def post_fit(self) -> None:
+        assert self.fit_result is not None
+        assert self.n_l is not None and self.n_r is not None
+        assert self.l_vary is not None and self.r_vary is not None
 
         params = self.fit_result.params
 
@@ -889,68 +974,20 @@ class LifetimeSpectrum:
         )
         params["mean_lifetime"].stderr = self.dmean_lifetime
 
-        if self.verbose:
-            self.fit_report()
-
-        if self.show_fits or self.show:
-            self.plot_fit_result()
-
         self.model = parse_model({
             k: (v.value, v.vary, v.min, v.max) for k, v in params.items()
         })
 
-        return self.fit_result
-
-    def eval_res_fct(self) -> Tuple[np.ndarray, np.ndarray]:
-        assert self.fit_result is not None
-
-        params = self.fit_result.params
-
-        t_shifts = [params[f"res_t0_{i}"].value for i in range(1, self.n_r+1)]
-        sigmas = [params[f"res_sigma_{i}"].value for i in range(1, self.n_r+1)]
-
-        left_ranges = [t_shift - sig for t_shift, sig in zip(t_shifts, sigmas)]
-        right_ranges = [t_shift + sig for t_shift, sig in zip(t_shifts, sigmas)]
-
-        t = np.arange(np.min(left_ranges) - 100, np.max(right_ranges) + 100)
-        y = np.zeros_like(t)
-
-        for j in range(1, self.n_r+1):
-            sig = params[f"res_sigma_{j}"].value
-            t0 = params[f"res_t0_{j}"].value
-            i = params[f"res_intensity_{j}"].value
-
-            y += i * gauss(t, t0, sig)
-
-        return t, y
-
-    def plot_fit_result(
-        self,
-        show_init: bool = False,
-        show: bool = True,
-    ) -> Tuple[Figure, Tuple[plt.Axes, ...]]:
+    def get_component_arrays(self) -> Tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
         assert self.trimmed_spectrum is not None
         assert self.trimmed_times is not None
         assert self.fit_result is not None
+        assert self.n_l is not None and self.n_r is not None
 
-        fig = plt.figure()
-        fig.suptitle(f"Fit Result\n{self.name}")
-
-        gs = GridSpec(2, 2, height_ratios=[1, 4])
-        ax1 = fig.add_subplot(gs[0, 0])
-        ax2 = fig.add_subplot(gs[1, 0], sharex=ax1)
-        ax3 = fig.add_subplot(gs[:, 1])
-
-        ### Residuals
-
-        ax1.set_ylabel("Residuals")
-
-        if self.fit_result.residual is not None:
-            ax1.scatter(self.trimmed_times, self.fit_result.residual, s=1)
-
-        ### Resolution Function and Components
+        ### Resolution Components
 
         params = self.fit_result.params
+        t = self.trimmed_times
 
         t_shifts = [params[f"res_t0_{i}"].value for i in range(1, self.n_r+1)]
         sigmas = [params[f"res_sigma_{i}"].value for i in range(1, self.n_r+1)]
@@ -958,8 +995,8 @@ class LifetimeSpectrum:
         left_ranges = [t_shift - sig for t_shift, sig in zip(t_shifts, sigmas)]
         right_ranges = [t_shift + sig for t_shift, sig in zip(t_shifts, sigmas)]
 
-        t = np.arange(np.min(left_ranges) - 100, np.max(right_ranges) + 100)
-        res = np.zeros_like(t)
+        t_res = np.arange(np.min(left_ranges) - 100, np.max(right_ranges) + 100)
+        res = np.zeros_like(t_res)
         res_components = []
 
         for j in range(1, self.n_r+1):
@@ -967,38 +1004,11 @@ class LifetimeSpectrum:
             t0 = params[f"res_t0_{j}"].value
             i = params[f"res_intensity_{j}"].value
 
-            c = i * gauss(t, t0, sig)
+            c = i * gauss(t_res, t0, sig)
             res += c
             res_components.append(c)
 
-        for i, c in enumerate(res_components, 1):
-            ax3.semilogy(t, c, label=f"Component {i}")
-        ax3.semilogy(t, res, label="Total")
-        ax3.set_title("Resolution Components")
-        ax3.set_xlabel("Time [ps]")
-        ax3.set_ylim((1e-6, np.max(res)*1.1))
-
-        ### Lifetime Spectrum and Components
-
-        ax2.set_xlabel("Time [ps]")
-        ax2.set_ylabel("Counts")
-
-        ax2.scatter(self.trimmed_times, self.trimmed_spectrum, label="Data", s=1)
-
-        if show_init:
-            ax2.plot(
-                self.trimmed_times, self.fit_result.init_fit, linestyle="--",
-                c="C1", label="Initial Fit"
-            )
-
-        ax2.plot(
-            self.trimmed_times, self.fit_result.best_fit, linestyle="-",
-            c="C2", label="Best Fit"
-        )
-
-        ax2.set_yscale("log")
-
-        ylim = ax2.get_ylim()
+        ### Lifetime Components
 
         t = self.trimmed_times
         lt_components = []
@@ -1019,6 +1029,69 @@ class LifetimeSpectrum:
                 c = erfc(b)
                 y += l_i * r_i / (2*l_tau) * e * c
             lt_components.append(y * params["N"] + params["background"])
+
+        return t_res, lt_components, res_components
+
+    def plot_fit_result(
+        self,
+        show_init: bool = False,
+        show: bool = True,
+    ) -> Tuple[Figure, Tuple[plt.Axes, ...]]:
+        assert self.trimmed_spectrum is not None
+        assert self.trimmed_times is not None
+        assert self.fit_result is not None
+        assert self.n_l is not None and self.n_r is not None
+
+        fig = plt.figure()
+        fig.suptitle(f"Fit Result\n{self.name}")
+
+        gs = GridSpec(2, 2, height_ratios=[1, 4])
+        ax1 = fig.add_subplot(gs[0, 0])
+        ax2 = fig.add_subplot(gs[1, 0], sharex=ax1)
+        ax3 = fig.add_subplot(gs[:, 1])
+
+        t = self.trimmed_times
+
+        t_res, lt_components, res_components = self.get_component_arrays()
+        res = np.sum(res_components, axis=0)
+
+        ### Residuals
+
+        ax1.set_ylabel("Residuals")
+
+        if self.fit_result.residual is not None:
+            ax1.scatter(t, self.fit_result.residual, s=1)
+
+        ### Resolution Function and Components
+
+        for i, c in enumerate(res_components, 1):
+            ax3.semilogy(t_res, c, label=f"Component {i}")
+        ax3.semilogy(t_res, res, label="Total")
+        ax3.set_title("Resolution Components")
+        ax3.set_xlabel("Time [ps]")
+        ax3.set_ylim((1e-6, np.max(res)*1.1))
+
+        ### Lifetime Spectrum and Components
+
+        ax2.set_xlabel("Time [ps]")
+        ax2.set_ylabel("Counts")
+
+        ax2.scatter(t, self.trimmed_spectrum, label="Data", s=1)
+
+        if show_init:
+            ax2.plot(
+                t, self.fit_result.init_fit, linestyle="--",
+                c="C1", label="Initial Fit"
+            )
+
+        ax2.plot(
+            t, self.fit_result.best_fit, linestyle="-",
+            c="C2", label="Best Fit"
+        )
+
+        ax2.set_yscale("log")
+
+        ylim = ax2.get_ylim()
 
         for i, c in enumerate(lt_components, 1):
             ax2.semilogy(t, c, label=f"Component {i}", c=f"C{i+2}")
