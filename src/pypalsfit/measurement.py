@@ -2572,14 +2572,15 @@ class MeasurementCampaign:
         assert self.is_homogeneous()
         assert isinstance(shared_params, (lmfit.Parameters, dict))
 
+        # This defines the order of shared params
+        shared_p_names = list(shared_params.keys())
+
         if isinstance(shared_params, dict):
             param_dict, shared_params = shared_params, lmfit.Parameters()
-            for param_name, param_attributes in param_dict.items():
-                param_attributes = parse_parameter_tuple(param_attributes)
-                shared_params.add(param_name, *param_attributes)
+            for name in shared_p_names:
+                param_attributes = parse_parameter_tuple(param_dict[name])
+                shared_params.add(name, *param_attributes)
 
-        shared_p_names = set(shared_params.keys())
-        n_shared = len(shared_params)
         shared_vary = [shared_params[p].vary for p in shared_params]
         n_shared_vary = sum(shared_vary)
 
@@ -2589,8 +2590,8 @@ class MeasurementCampaign:
         for m in self:
             for s in m:
                 assert s.model is not None, err1
-                model_p_names = set(dump_model(s.model).keys())
-                assert shared_p_names <= model_p_names, err2
+                model_p = set(dump_model(s.model).keys())
+                assert all(shared_p in model_p for shared_p in shared_p_names), err2
 
         # Put together all shared data
 
@@ -2615,17 +2616,14 @@ class MeasurementCampaign:
                     get_bg,
                 )
 
-                # Concatenate trimmed spectra
                 shared_spectrum.append(s.trimmed_spectrum)
-
-                # concatenate trimmed times with appropriate shifts
                 shared_times.append(s.trimmed_times)
 
                 # Merge all spectra's parameters into one Parameters object
                 model, model_params, model_func, model_dfunc = s.make_model()
                 shared_func_components.append(model_func)
                 shared_dfunc_components.append(model_dfunc)
-                added_names = set()
+                added_names = []
                 for param_name, param in model_params.items():
                     if param_name in shared_p_names:
                         continue
@@ -2637,8 +2635,8 @@ class MeasurementCampaign:
                         min = param.min,
                         max = param.max,
                     )
-                    added_names.add(param_name)
-                separate_p_names.append(shared_p_names | added_names)
+                    added_names.append(param_name)
+                separate_p_names.append(shared_p_names + added_names)
 
         shared_spectrum = np.concatenate(shared_spectrum)
         lengths = [len(s) for s in shared_times]
@@ -2653,6 +2651,7 @@ class MeasurementCampaign:
                 for _ in m:
                     func = shared_func_components[idx]
                     t = shared_times[idx]
+                    # Order doesn't matter here
                     params = {
                         p.split("__")[-1]: shared_params[p]
                         for p in separate_p_names[idx]
@@ -2672,10 +2671,16 @@ class MeasurementCampaign:
                 for _ in m:
                     dfunc = shared_dfunc_components[idx]
                     t = shared_times[idx]
-                    params = {
-                        p.split("__")[-1]: shared_params[p]
-                        for p in separate_p_names[idx]
-                    }
+                    params = lmfit.Parameters()
+                    for p in separate_p_names[idx]:
+                        param = shared_params[p]
+                        params.add(
+                            name = param.name.split("__")[-1],
+                            value = param.value,
+                            vary = param.vary,
+                            min = param.min,
+                            max = param.max,
+                        )
                     out = dfunc(params, None, weights[idx], t)
                     l = out.shape[1]
                     out = np.pad(
@@ -2689,6 +2694,7 @@ class MeasurementCampaign:
                     k = 0
                     for i in range(n_shared_vary):
                         dy[k] += out[i]
+                        k += 1
 
                     for column in out[n_shared_vary:]:
                         dy.append(column)
