@@ -14,15 +14,15 @@ ysz_model = {
 }
 
 res_model = {
-    "res_sigma_1": (80, 50, 110),
+    "res_sigma_1": (80, 50, 120),
     "res_intensity_1": (0.5, 0.02),
 
     "res_sigma_2": (125, 100, 150),
-    "res_intensity_2": (0.15, 0.05, 0.4),
+    "res_intensity_2": (0.15, 0.05),
     "res_t0_2": (10, -70, 30),
 
-    "res_sigma_3": (70, 50, 120),
-    "res_intensity_3": (0.1, 0.05, 0.4),
+    "res_sigma_3": (70, 50, 110),
+    "res_intensity_3": (0.1, 0.05),
     "res_t0_3": (90, 30, 150),
 }
 
@@ -55,8 +55,8 @@ mc = MeasurementCampaign(
     show_fits = True,
     verbose = True,
 
-    fit_start_counts = 10,
-    fit_end_counts = 900,
+    fit_start_counts = 40,
+    fit_end_counts = 1000,
 
     autocompute = False,
 )
@@ -64,10 +64,8 @@ mc = MeasurementCampaign(
 mc.shared_fit(
     {
         "lifetime_1": (178, 172, 190),
-        "lifetime_2": (378, 300, 450),
+        "lifetime_2": (378, 320, 420),
     },
-
-    use_jacobian=False,
 
     fit_start_counts = 10,
     fit_end_counts = 900,
@@ -96,11 +94,14 @@ mc.dump_resolution_components(top + "ysz_resolution_components_shared.json")
 ### Backwards Validation
 
 new_ysz_model = {
-    "lifetime_1": (178, 100, 200),
-    "intensity_1": (0.92, 0.0005),
+    "lifetime_1": (178, False, 100, 200),
+    "intensity_1": (0.92),
 
-    "lifetime_2": (350, 250, 450),
-    "intensity_2": (0.05, 0.0005),
+    "lifetime_2": (370, 320, 420),
+    "intensity_2": (0.05),
+
+    "lifetime_3": (600, 450, 125000),
+    "intensity_3": (0.05),
 }
 
 mc = MeasurementCampaign(
@@ -109,7 +110,7 @@ mc = MeasurementCampaign(
     lt_model = e_dependent_bg(new_ysz_model),
     lt_keys = ["PositronImplantationEnergy"],
 
-    res_model = top + "ysz_resolution_components.json",
+    res_model = top + "ysz_resolution_components_shared.json",
     res_keys = ["PositronImplantationEnergy"],
 
     show_fits = True,
@@ -124,6 +125,7 @@ mc.plot(
     "PositronImplantationEnergy", [
         "lifetime_1", "intensity_1",
         "lifetime_2", "intensity_2",
+        "lifetime_3", "intensity_3",
     ],
     marker="x",
 )
