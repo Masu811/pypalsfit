@@ -20,6 +20,105 @@ from .utils import Filter, isfinite, _check_input, _split_params, progress
 
 
 class LifetimeMeasurement:
+    """Class representing a PALS measurement of multiple detectors.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path or None, optional
+        Path to the file containing the measurement data to import. Supported
+        file types are .dat ELBE files. If None, nothing is imported and this
+        `LifetimeMeasurement` remains empty. The default is None.
+    lt_model : LifetimeModel or dict or str or None, optional
+        Lifetime components or `LifetimeModel` that describe this measurement's
+        spectra. Will be merged with `res_model` before passing it on to the
+        imported spectra. Instead of providing both `lt_model` and `res_model`
+        which then get merged, a complete model can be provided as either
+        argument. For information on the format to use when providing a
+        dictionary instead of a `LifetimeModel` see
+        `pypalsfit.model.parse_model`.
+
+        - If None and `res_model` is None, the imported spectra receive no
+          model.
+        - If a `LifetimeModel`, gets merged with `res_model` and passed to all
+          spectra.
+        - If a dictionary of the form `parameter: attributes`, gets assembled
+          to a `LifetimeModel`, then merged with `res_model` and then passed
+          to all spectra.
+        - If a dictionary of the form `"Detector {detname}": {...}`, each
+          spectrum receives the entry corresponding to its `detname` attribute.
+          If any `detname` is not among the keys, a KeyError is raised.
+        - If a dictionary of the form
+          `"Measurement {name}": {"Metadata": {...}, "Detector {detname}": {...}}`,
+          `lt_keys` must also be provided. This `LifetimeMeasurement` then
+          receives the first entry of `lt_model` in which all values of
+          `lt_keys` in `"Metadata"` match the values of `lt_keys` in this
+          `LifetimeMeasurement`'s `metadata` list. Each spectrum then receives
+          the subentry corresponding to its `detname` attribute.
+          If any key in `lt_keys` is not in this `LifetimeMeasurement`'s
+          `metadata` dict or all `"Metadata"` entries of `lt_model`, or if
+          any `detname` is not among any subentry's keys, a KeyError is raised.
+          If no entry can be found in which all values of `lt_keys` match, a
+          ValueError is raised.
+        - If a str, it is taken as a path to a json file to import the
+          dictionary from.
+
+        The default is None.
+    lt_keys : list of str or None, optional
+        Parameter keys to use when comparing entries of `lt_model` with this
+        `LifetimeMeasurement`'s metadata. If `lt_model` is not of the form
+        `"Measurement {name}": {"Metadata": {...}, "Detector {detname}": {...}}`,
+        `lt_keys` is ignored. The default is None.
+    res_model : LifetimeModel or dict or str or None, optional
+        Same as `lt_model` but containing the resolution components. Instead of
+        providing both `lt_model` and `res_model` which then get merged, a
+        complete model can be provided as either argument. The default is None.
+    res_keys : list of str or None, optional
+        Same as `lt_keys` but for `res_model`. The default is None.
+    calibrate : bool, optional
+        Whether to allow resolution components to vary. If True, the individual
+        components' vary attributes are respected. If False, all components'
+        vary attributes are overridden to False. The default is False.
+    name : str or None, optional
+        Name of this `LifetimeMeasurement`. If None and `path` is not None, then
+        `name` is set to the filename (including suffix). The default is None.
+    dtype : type or None, optional
+        Passed to each spectrum. Dtype passed to numpy.array when converting
+        `spectrum`. The default is None. The default is None.
+    show_fits : bool, optional
+        Passed to each spectrum. Whether to show a plot of the fit result after
+        fitting. The default is True.
+    show : bool, optional
+        Passed to each spectrum. Whether to show debug plots. The default is
+        False.
+    verbose : bool, optional
+        Passed to each spectrum. Whether to print a fit report after fitting.
+        The default is True.
+    autocompute : bool, optional
+        Passed to each spectrum. Whether to perform the fit if all prerequisites
+        are fulfilled. The prerequisites are
+
+        - `spectrum` is not None
+        - `tcal` is not None
+        - `lt_model` and `res_model` are not None
+
+        The default is True.
+    debug : bool, optional
+        Whether to print debug information. The default is False.
+    **kwargs
+        All other keyword arguments are passed to `LifetimeSpectrum.__init__`.
+
+    Raises
+    ------
+    KeyError
+        If any key is missing in either `lt_model` / `res_model` or this
+        `LifetimeMeasurement`'s `metadata` when comparing values to select a
+        model.
+    ValueError
+        If no `LifetimeModel` in `lt_model` or `res_model` can be associated
+        with all `LifetimeSpectra`.
+    NotImplementedError
+        If a path to a file of unsupported format is provided.
+    """
     def __init__(
         self,
         path: str | Path | None = None,
@@ -184,8 +283,18 @@ class LifetimeMeasurement:
         return {s.detname for s in self}
 
     def show_spectra(self, time_axis=True):
+        """Plot all lifetime spectra in this `LifetimeMeasurement`.
+
+        Parameters
+        ----------
+        time_axis : bool, optional
+            Whether to show time on the x axis (as opposed to channel indices).
+            Only applies if all spectra have a time calibration. The default is
+            True.
+        """
         if any(s.times is None for s in self):
             time_axis = False
+
         for det in self.detnames:
             s = self[det]
             if time_axis:
@@ -202,7 +311,26 @@ class LifetimeMeasurement:
         plt.legend()
         plt.show()
 
-    def dump_components(self, filepath=None):
+    def dump_components(
+        self,
+        filepath: str | Path | None = None
+    ) -> dict:
+        """Convert all components of all `LifetimeSpectra`'s models into a
+        dictionary and export to a json file.
+
+        Parameters
+        ----------
+        filepath : str or pathlib.Path or None, optional
+            Path to which to write the json file. If None, no json file is
+            exported. The default is None.
+
+        Returns
+        -------
+        dict
+            Dictionary containing all components of all `LifetimeSpectra`'s
+            models. The dictionary is of the form
+            `"Measurement {name}": {"Metadata": {...}, "Detector {detname}": {...}}`.
+        """
         out = {"Metadata": {k: str(v) for k, v in self.metadata.items()}}
         for i, s in enumerate(self):
             out[f"Detector {s.detname or i+1}"] = s.dump_components()
@@ -213,7 +341,26 @@ class LifetimeMeasurement:
 
         return out
 
-    def dump_resolution_components(self, filepath=None):
+    def dump_resolution_components(
+        self,
+        filepath: str | Path | None = None
+    ) -> dict:
+        """Convert the resolution components of all `LifetimeSpectra`'s models
+        into a dictionary and export to a json file.
+
+        Parameters
+        ----------
+        filepath : str or pathlib.Path or None, optional
+            Path to which to write the json file. If None, no json file is
+            exported. The default is None.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the resolution components of all
+            `LifetimeSpectra`'s models. The dictionary is of the form
+            `"Measurement {name}": {"Metadata": {...}, "Detector {detname}": {...}}`.
+        """
         out = {"Metadata": {k: str(v) for k, v in self.metadata.items()}}
         for i, s in enumerate(self):
             out[f"Detector {s.detname or i+1}"] = s.dump_resolution_components()
@@ -224,7 +371,26 @@ class LifetimeMeasurement:
 
         return out
 
-    def dump_lifetime_components(self, filepath=None):
+    def dump_lifetime_components(
+        self,
+        filepath: str | Path | None = None
+    ) -> dict:
+        """Convert the lifetime components of all `LifetimeSpectra`'s models
+        into a dictionary and export to a json file.
+
+        Parameters
+        ----------
+        filepath : str or pathlib.Path or None, optional
+            Path to which to write the json file. If None, no json file is
+            exported. The default is None.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the lifetime components of all
+            `LifetimeSpectra`'s models. The dictionary is of the form
+            `"Measurement {name}": {"Metadata": {...}, "Detector {detname}": {...}}`.
+        """
         out = {"Metadata": {k: str(v) for k, v in self.metadata.items()}}
         for i, s in enumerate(self):
             out[f"Detector {s.detname or i+1}"] = s.dump_lifetime_components()
@@ -237,6 +403,127 @@ class LifetimeMeasurement:
 
 
 class MeasurementCampaign:
+    """Class representing a series of measurements on a single sample.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path or list of those or None, optional
+        Path to the folder(s) containing the measurement data to import.
+        Supported file types are .dat ELBE files. The imported
+        `LifetimeMeasurement`s are stored under the `measurements` attribute.
+        If None, nothing is imported and this `MeasurementCampaign` remains
+        empty. If a list of folders is provided, the folder names are sorted
+        logically (e.g. `1, 2, 10` instead of alphabetically `1, 10, 2`) and
+        then all imported `LifetimeMeasurement`s get merged into `measurements`.
+        The default is None.
+    measurements : list of LifetimeMeasurement or None, optional
+        Instead of importing `LifetimeMeasurement`s from files, they can be
+        provided directly with this argument. If both `path` and `measurements`
+        are provided, `path` is ignored. The default is None.
+    lt_model : LifetimeModel or dict or str or None, optional
+        Lifetime components or `LifetimeModel`(s) that describe this campaign's
+        spectra. Will be merged with `res_model` before passing it on to the
+        imported `LifetimeMeasurement`s. Instead of providing both `lt_model`
+        and `res_model` which then get merged, a complete model can be provided
+        as either argument. For information on the format to use when providing
+        a dictionary instead of a `LifetimeModel` see
+        `pypalsfit.model.parse_model`.
+
+        - If None and `res_model` is None, the imported `LifetimeMeasurement`s
+          receive no model.
+        - If a `LifetimeModel`, gets merged with `res_model` and passed to all
+          `LifetimeMeasurement`s.
+        - If a dictionary of the form `parameter: attributes`, gets assembled
+          to a `LifetimeModel`, then merged with `res_model` and then passed
+          to all `LifetimeMeasurement`s.
+        - If a dictionary of the form `"Detector {detname}": {...}`, gets passed
+          to all `LifetimeMeasurement`s. Each spectrum then receives the entry
+          corresponding to its `detname` attribute. If any `detname` is not
+          among the keys, a KeyError is raised.
+        - If a dictionary of the form
+          `"Measurement {name}": {"Metadata": {...}, "Detector {detname}": {...}}`,
+          `lt_keys` must also be provided. Each `LifetimeMeasurement` then
+          receives the first entry of `lt_model` in which all values of
+          `lt_keys` in `"Metadata"` match the values of `lt_keys` in the
+          `LifetimeMeasurement`'s `metadata` list. Each spectrum then receives
+          the subentry corresponding to its `detname` attribute.
+          If any key in `lt_keys` is not in all `LifetimeMeasurement`s'
+          `metadata` dict or all `"Metadata"` entries of `lt_model`, or if
+          any `detname` is not among any subentry's keys, a KeyError is raised.
+          If no entry can be found in which all values of `lt_keys` match, a
+          ValueError is raised.
+        - If a str, it is taken as a path to a json file to import the
+          dictionary from.
+
+        The default is None.
+    lt_keys : list of str or None, optional
+        Parameter keys to use when comparing entries of `lt_model` with each
+        `LifetimeMeasurement`'s metadata. If `lt_model` is not of the form
+        `"Measurement {name}": {"Metadata": {...}, "Detector {detname}": {...}}`,
+        `lt_keys` is ignored. The default is None.
+    res_model : LifetimeModel or dict or str or None, optional
+        Same as `lt_model` but containing the resolution components. Instead of
+        providing both `lt_model` and `res_model` which then get merged, a
+        complete model can be provided as either argument. The default is None.
+    res_keys : list of str or None, optional
+        Same as `lt_keys` but for `res_model`. The default is None.
+    calibrate : bool, optional
+        Whether to allow resolution components to vary. If True, the individual
+        components' vary attributes are respected. If False, all components'
+        vary attributes are overridden to False. The default is False.
+    name : str or None, optional
+        Name of this `MeasurementCampaign`. If None and `path` is a string, then
+        `name` is set to the leaf directory name. The default is None.
+    dtype : type or None, optional
+        Passed to each spectrum. Dtype passed to numpy.array when converting
+        `spectrum`. The default is None. The default is None.
+    show_fits : bool, optional
+        Passed to each spectrum. Whether to show a plot of the fit result after
+        fitting. The default is True.
+    show : bool, optional
+        Passed to each spectrum. Whether to show debug plots. The default is
+        False.
+    verbose : bool, optional
+        Passed to each spectrum. Whether to print a fit report after fitting.
+        The default is True.
+    autocompute : bool, optional
+        Passed to each spectrum. Whether to perform the fit if all prerequisites
+        are fulfilled. The prerequisites are
+
+        - `spectrum` is not None
+        - `tcal` is not None
+        - `lt_model` and `res_model` are not None
+
+        The default is True.
+    debug : bool, optional
+        Whether to print debug information. The default is False.
+    pbar : bool, optional
+        Whether to print a progress bar during import. The default is True.
+    cache : bool, optional
+        Whether to use the cache functionality for this `MeasurementCampaign`.
+        Caching is realized by pickling this `MeasurementCampaign`.
+        If True, the following things apply:
+
+        - Loading from cache: Looks for an existing cache file to import. If
+          found, compares the `path` attributes of this and the cached object.
+          If they match (i.e. both equal or both None), the cached object is
+          loaded and no import from the actual data files is performed. If they
+          don't match or if no cache file is, the import proceeds as usual.
+        - Writing to cache: At the end of `__init__` this `MeasurementCampaign`
+          is pickled in its entirety if it was not loaded from cache,
+          overwriting the cached object.
+
+        The default is False.
+    cache_path : str, optional
+        Path to use for the cache file. The default is "/tmp/pals_cache.pkl".
+    **kwargs
+        All other keyword arguments are passed to `LifetimeMeasurement.__init__`.
+
+    Raises
+    ------
+    TypeError
+        If `path` is not None and not of type str or list of str.
+    """
     def __init__(
         self,
         path: str | Path | List[str | Path] | None = None,
@@ -253,6 +540,7 @@ class MeasurementCampaign:
         show: bool = False,
         verbose: bool = False,
         autocompute: bool = True,
+        debug: bool = False,
         pbar: bool = True,
         cache: bool = False,
         cache_path: str = "/tmp/pals_cache.pkl",
@@ -352,7 +640,7 @@ class MeasurementCampaign:
                     lt_keys=lt_keys, res_keys=res_keys,
                     calibrate=calibrate, dtype=dtype, show_fits=show_fits,
                     show=self.show, verbose=self.verbose,
-                    autocompute=autocompute, **kwargs
+                    autocompute=autocompute, debug=debug, **kwargs
                 ))
                 if pbar:
                     progress(done+1, total, start, 20, "Importing")
@@ -2757,6 +3045,127 @@ class MeasurementCampaign:
                     s.plot_fit_result()
 
 class MultiCampaign:
+    """Class representing a series of measurements on multiple samples.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path or list of those or None, optional
+        Path to the folder(s) containing the measurement data to import.
+        Supported file types are .dat ELBE files. The imported
+        `MeasurementCampaign`s are stored under the `campaigns` attribute.
+        If None, nothing is imported and this `MultiCampaign` remains empty. If
+        a list of folders is provided, the folder names are sorted logically
+        (e.g. `1, 2, 10` instead of alphabetically `1, 10, 2`) and each folder
+        is imported into one `MeasurementCampaign`.
+        The default is None.
+    campaigns : list of MeasurementCampaign or None, optional
+        Instead of importing `MeasurementCampaign`s from files, they can be
+        provided directly with this argument. If both `path` and `campaigns`
+        are provided, `path` is ignored. The default is None.
+    lt_model : LifetimeModel or dict or str or None, optional
+        Lifetime components or `LifetimeModel`(s) that describe this campaign's
+        spectra. Gets passed to each imported `MeasurmentCampaign`. Instead of
+        providing both `lt_model` and `res_model` which then get merged, a
+        complete model can be provided as either argument. For information on
+        the format to use when providing a dictionary instead of a
+        `LifetimeModel` see `pypalsfit.model.parse_model`. Each
+        `MeasurementCampaign` does the following with the provided model:
+
+        - If None and `res_model` is None, the imported `LifetimeMeasurement`s
+          receive no model.
+        - If a `LifetimeModel`, gets merged with `res_model` and passed to all
+          `LifetimeMeasurement`s.
+        - If a dictionary of the form `parameter: attributes`, gets assembled
+          to a `LifetimeModel`, then merged with `res_model` and then passed
+          to all `LifetimeMeasurement`s.
+        - If a dictionary of the form `"Detector {detname}": {...}`, gets passed
+          to all `LifetimeMeasurement`s. Each spectrum then receives the entry
+          corresponding to its `detname` attribute. If any `detname` is not
+          among the keys, a KeyError is raised.
+        - If a dictionary of the form
+          `"Measurement {name}": {"Metadata": {...}, "Detector {detname}": {...}}`,
+          `lt_keys` must also be provided. Each `LifetimeMeasurement` then
+          receives the first entry of `lt_model` in which all values of
+          `lt_keys` in `"Metadata"` match the values of `lt_keys` in the
+          `LifetimeMeasurement`'s `metadata` list. Each spectrum then receives
+          the subentry corresponding to its `detname` attribute.
+          If any key in `lt_keys` is not in all `LifetimeMeasurement`s'
+          `metadata` dict or all `"Metadata"` entries of `lt_model`, or if
+          any `detname` is not among any subentry's keys, a KeyError is raised.
+          If no entry can be found in which all values of `lt_keys` match, a
+          ValueError is raised.
+        - If a str, it is taken as a path to a json file to import the
+          dictionary from.
+
+        The default is None.
+    lt_keys : list of str or None, optional
+        Parameter keys to use when comparing entries of `lt_model` with each
+        `LifetimeMeasurement`'s metadata. If `lt_model` is not of the form
+        `"Measurement {name}": {"Metadata": {...}, "Detector {detname}": {...}}`,
+        `lt_keys` is ignored. The default is None.
+    res_model : LifetimeModel or dict or str or None, optional
+        Same as `lt_model` but containing the resolution components. Instead of
+        providing both `lt_model` and `res_model` which then get merged, a
+        complete model can be provided as either argument. The default is None.
+    res_keys : list of str or None, optional
+        Same as `lt_keys` but for `res_model`. The default is None.
+    calibrate : bool, optional
+        Whether to allow resolution components to vary. If True, the individual
+        components' vary attributes are respected. If False, all components'
+        vary attributes are overridden to False. The default is False.
+    name : str or None, optional
+        Name of this `MeasurementCampaign`. If None and `path` is a string, then
+        `name` is set to the leaf directory name. The default is None.
+    dtype : type or None, optional
+        Passed to each spectrum. Dtype passed to numpy.array when converting
+        `spectrum`. The default is None. The default is None.
+    show_fits : bool, optional
+        Passed to each spectrum. Whether to show a plot of the fit result after
+        fitting. The default is True.
+    show : bool, optional
+        Passed to each spectrum. Whether to show debug plots. The default is
+        False.
+    verbose : bool, optional
+        Passed to each spectrum. Whether to print a fit report after fitting.
+        The default is True.
+    autocompute : bool, optional
+        Passed to each spectrum. Whether to perform the fit if all prerequisites
+        are fulfilled. The prerequisites are
+
+        - `spectrum` is not None
+        - `tcal` is not None
+        - `lt_model` and `res_model` are not None
+
+        The default is True.
+    debug : bool, optional
+        Whether to print debug information. The default is False.
+    pbar : bool, optional
+        Whether to print a progress bar during import. The default is True.
+    cache : bool, optional
+        Whether to use the cache functionality for this `MultiCampaign`.
+        Caching is realized by pickling this `MultiCampaign`.
+        If True, the following things apply:
+
+        - Loading from cache: Looks for an existing cache file to import. If
+          found, compares the `path` attributes of this and the cached object.
+          If they match (i.e. both equal or both None), the cached object is
+          loaded and no import from the actual data files is performed. If they
+          don't match or if no cache file is, the import proceeds as usual.
+        - Writing to cache: At the end of `__init__` this `MultiCampaign`
+          is pickled in its entirety if it was not loaded from cache,
+          overwriting the cached object.
+
+        The default is False.
+    cache_path : str, optional
+        Path to use for the cache file. The default is "/tmp/pals_cache.pkl".
+    **kwargs
+        All other keyword arguments are passed to `MeasurementCampaign.__init__`.
+
+    Raises
+    ------
+    TypeError
+        If `path` is not None and not of type str or list of str.
+    """
     def __init__(
         self,
         path: str | Path | List[str | Path] | None = None,
@@ -2771,6 +3180,7 @@ class MultiCampaign:
         show: bool = False,
         verbose: bool = False,
         autocompute: bool = True,
+        debug: bool = False,
         pbar: bool = True,
         cache: bool = False,
         cache_path: str = "/tmp/pals_cache.pkl",
@@ -2831,7 +3241,7 @@ class MultiCampaign:
                 path, lt_model=lt_model, res_model=res_model,
                 calibrate=calibrate, dtype=dtype, show_fits=show_fits,
                 show=self.show, verbose=self.verbose,
-                autocompute=autocompute, **kwargs
+                autocompute=autocompute, debug=debug, **kwargs
             ).split("directory").campaigns
 
             for mc in self.campaigns:

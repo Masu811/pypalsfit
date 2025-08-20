@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from copy import deepcopy
 from itertools import product
 import json
+from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -57,11 +58,11 @@ class LifetimeSpectrum:
         provided model's vary options are ignored. The default is False.
     show_fits: bool, optional
         Whether to show plots of the fit results after fitting (calls
-        self.plot_fit_result). The default is True.
+        `self.plot_fit_result`). The default is True.
     show: bool,
         Whether to show debugging plots. The default is False.
     verbose: bool,
-        Whether to print a fit report after fitting (calls self.fit_report).
+        Whether to print a fit report after fitting (calls `self.fit_report`).
         The default is True.
     autocompute: bool, optional
         Whether to perform the fit if all prerequisites are fulfilled. The
@@ -72,11 +73,11 @@ class LifetimeSpectrum:
         - `lt_model` and `res_model` are not None
 
         The default is True.
-    dtype: type or None = int,
+    dtype: type or None, optional
         Dtype passed to numpy.array when converting `spectrum`. The default is
-        int.
+        None.
     **kwargs
-        All other keyword arguments are passed to self.fit.
+        All other keyword arguments are passed to `self.fit`.
     """
     def __init__(
         self,
@@ -91,7 +92,7 @@ class LifetimeSpectrum:
         show: bool = False,
         verbose: bool = False,
         autocompute: bool = True,
-        dtype: type | None = int,
+        dtype: type | None = None,
         **kwargs
     ) -> None:
 
@@ -1593,7 +1594,26 @@ class LifetimeSpectrum:
         print()
         print("-"*100)
 
-    def dump_components(self, filepath=None):
+    def dump_components(
+        self,
+        filepath: str | Path | None = None
+    ) -> dict:
+        """Convert all components of this `LifetimeSpectrum`'s model into a
+        dictionary and export to a json file.
+
+        Parameters
+        ----------
+        filepath : str or pathlib.Path or None, optional
+            Path to which to write the json file. If None, no json file is
+            exported. The default is None.
+
+        Returns
+        -------
+        dict
+            Dictionary containing all components of this `LifetimeSpectrum`'s
+            model. The dictionary is of the form
+            `parameter: attributes`.
+        """
         err = "No fit has been performed successfully"
         assert self.model is not None, err
         assert self.fit_result is not None, err
@@ -1606,7 +1626,26 @@ class LifetimeSpectrum:
 
         return out
 
-    def dump_resolution_components(self, filepath=None):
+    def dump_resolution_components(
+        self,
+        filepath: str | Path | None = None
+    ) -> dict:
+        """Convert the resolution components of this `LifetimeSpectrum`'s model
+        into a dictionary and export to a json file.
+
+        Parameters
+        ----------
+        filepath : str or pathlib.Path or None, optional
+            Path to which to write the json file. If None, no json file is
+            exported. The default is None.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the resolution components of this
+            `LifetimeSpectrum`'s model. The dictionary is of the form
+            `parameter: attributes`.
+        """
         err = "No fit has been performed successfully"
         assert self.model is not None, err
         assert self.fit_result is not None, err
@@ -1621,7 +1660,26 @@ class LifetimeSpectrum:
 
         return out
 
-    def dump_lifetime_components(self, filepath=None):
+    def dump_lifetime_components(
+        self,
+        filepath: str | Path | None = None
+    ) -> dict:
+        """Convert the lifetime components of this `LifetimeSpectrum`'s model
+        into a dictionary and export to a json file.
+
+        Parameters
+        ----------
+        filepath : str or pathlib.Path or None, optional
+            Path to which to write the json file. If None, no json file is
+            exported. The default is None.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the lifetime components of this
+            `LifetimeSpectrum`'s model. The dictionary is of the form
+            `parameter: attributes`.
+        """
         err = "No fit has been performed successfully"
         assert self.model is not None, err
         assert self.fit_result is not None, err

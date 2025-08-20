@@ -10,6 +10,31 @@ def import_elbe(
     filepath: str | Path,
     dtype: type | None = None
 ) -> LifetimeMeasurement:
+    """Import spectra and metadata from an ELBE .dat file.
+
+    Parameters
+    ----------
+    filepath : str or pathlib.Path
+        Path to the spectrum file. ELBE spectrum files have the word "PALS" in
+        their name. The spectrum is imported and the metadata contained in the
+        file name and the content's header are imported. Additionally, a
+        corresponding "Measurement_Parameter" file is searched for in the same
+        folder and imported if found.
+    dtype : type or None, optional
+        Dtype to use when importing the spectra. Is passed to `pandas.read_csv`.
+        The default is None.
+
+    Returns
+    -------
+    LifetimeMeasurement
+        A fully assembled LifetimeMeasurement, containing spectra and metadata.
+
+    Raises
+    ------
+    AssertionError
+        If the provided file path does not lead to a .dat file or if the file
+        name does not contain the word "PALS".
+    """
     import pandas as pd
     err = "The provided file path does not lead to an ELBE spectrum file"
     assert str(filepath).endswith(".dat") and "PALS" in str(filepath), err
