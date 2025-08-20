@@ -4,18 +4,39 @@ import numpy as np
 import lmfit
 
 
-def gauss(x, mu, sig):
-    sig2 = sig**2
-    return 1 / np.sqrt(2 * np.pi * sig2) * np.exp(-0.5 / sig2 * (x - mu)**2)
-
-
 def parse_parameter_tuple(
     params: tuple | list | float | int,
     *,
-    min=-np.inf,
-    max=np.inf,
-    vary=True,
+    vary: bool = True,
+    min: float | int = -np.inf,
+    max: float | int = np.inf,
 ) -> list:
+    """Parse parameter tuple.
+
+    Converts a tuple of possibly missing parameter attributes into a list of
+    four parameter attributes: value, vary, min and max. The omission rules are
+
+    - Max can be omitted. Then it defaults to `max`.
+    - Min and max can be omitted. Then they default to `min` and `max`.
+    - Vary, min and max can be omitted. Then they default to `vary`, `min` and
+      `max`.
+    - Vary can be omitted. Then it defaults to `vary`.
+
+    Parameters
+    ----------
+    params : tuple or list or float or int
+        The possibly incomplete parameter attributes.
+    min : float or int, optional
+        Default minimum if not in `params`. The default is -numpy.inf.
+    max : float or int, optional
+        Default maximum if not in `params`. The default is numpy.inf.
+    vary : float or int, optional
+        Default minimum if not in `params`. The default is -numpy.inf.
+
+    Returns
+    -------
+    list of [float or int or None, bool, float, float]
+    """
     assert isinstance(params, (tuple, list, float, int))
 
     args = [None, vary, min, max]
@@ -43,6 +64,23 @@ def parse_parameter_tuple(
 
 
 class LifetimeComponent:
+    """Class representing a lifetime component.
+
+    A lifetime component consists of
+    - a lifetime
+    - an intensity.
+
+    Parameters
+    ----------
+    lifetime : float or int or lmfit.Parameter or sequence, optional
+        Lifetime. Gets converted to an lmfit.Parameter using
+        `parse_parameter_tuple` and stored under the `lifetime` attribute.
+        The default value is 100.
+    intensity : float or int or lmfit.Parameter or sequence, optional
+        Intensity. Gets converted to an lmfit.Parameter using
+        `parse_parameter_tuple` and stored under the `lifetime` attribute.
+        The default value is 0.5.
+    """
     def __init__(
         self,
         lifetime: float | int | lmfit.Parameter | Tuple | List = 100,
@@ -63,24 +101,38 @@ class LifetimeComponent:
                 *parse_parameter_tuple(intensity, min=0)
             )
         )
-        self.__name__ = "Lifetime Component"
-
-    def __call__(self, t, intensity, lifetime, t0):
-        return np.where(t < t0, 0, intensity / lifetime * np.exp(-(t - t0) / lifetime))
 
 
 class LifetimeComponents:
+    """Class representing a collection of `LifetimeComponent`s.
+
+    Parameters
+    ----------
+    components : int or LifetimeComponent or List of LifetimeComponent or None, optional
+        Lifetime components. Get stored under the `components` attribute which
+        is a list of `LifetimeComponent`s.
+
+        - If None, `self.components` remains empty.
+        - If an int, specifies with how many default `LifetimeComponent`s
+          `self.components` is filled.
+        - If a `LifetimeComponent`, gets put into `self.components`.
+        - If a list of `LifetimeComponent`s, `self.components` is a reference
+          to that list.
+
+        The default is None.
+    """
     def __init__(
         self,
-        components: None | int | LifetimeComponent | List[LifetimeComponent] = None,
-        vary: bool = True,
+        components: None
+            | int
+            | LifetimeComponent
+            | List[LifetimeComponent] = None,
     ) -> None:
-
-        self.vary = vary
 
         self.components: List[LifetimeComponent] = (
             [] if components is None else
-            [LifetimeComponent() for _ in range(components)] if isinstance(components, int) else
+            [LifetimeComponent() for _ in range(components)]
+                if isinstance(components, int) else
             [components] if isinstance(components, LifetimeComponent) else
             components
         )
@@ -98,6 +150,28 @@ class LifetimeComponents:
 
 
 class ResolutionComponent:
+    """Class representing a resolution component.
+
+    A resolution component (modelled by a Gaussian) consists of
+    - a standard deviation (Gaussian sigma)
+    - an intensity
+    - an offset in time.
+
+    Parameters
+    ----------
+    sigma : float or int or lmfit.Parameter or sequence, optional
+        Standard deviation. Gets converted to an lmfit.Parameter using
+        `parse_parameter_tuple` and stored under the `sigma` attribute.
+        The default value is 100.
+    intensity : float or int or lmfit.Parameter or sequence, optional
+        Intensity. Gets converted to an lmfit.Parameter using
+        `parse_parameter_tuple` and stored under the `lifetime` attribute.
+        The default value is 0.5.
+    t0 : float or int or lmfit.Parameter or sequence, optional
+        Time offset. Gets converted to an lmfit.Parameter using
+        `parse_parameter_tuple` and stored under the `t0` attribute.
+        The default value is 0.
+    """
     def __init__(
         self,
         sigma: float | int | lmfit.Parameter | Tuple | List = 100,
@@ -126,24 +200,38 @@ class ResolutionComponent:
                 *parse_parameter_tuple(t0)
             )
         )
-        self.__name__ = "Resolution Component"
-
-    def __call__(self, t, intensity, sigma):
-        return intensity * gauss(t, t[t.shape[0]//2], sigma)
 
 
 class ResolutionComponents:
+    """Class representing a collection of `ResolutionComponent`s.
+
+    Parameters
+    ----------
+    components : int or ResolutionComponent or List of ResolutionComponent or None, optional
+        Resolution components. Get stored under the `components` attribute which
+        is a list of `ResolutionComponent`s.
+
+        - If None, `self.components` remains empty.
+        - If an int, specifies with how many default `ResolutionComponent`s
+          `self.components` is filled.
+        - If a `ResolutionComponent`, gets put into `self.components`.
+        - If a list of `ResolutionComponent`s, `self.components` is a reference
+          to that list.
+
+        The default is None.
+    """
     def __init__(
         self,
-        components: None | int | ResolutionComponent | List[ResolutionComponent] = None,
-        vary: bool = True,
+        components: None
+            | int
+            | ResolutionComponent
+            | List[ResolutionComponent] = None,
     ) -> None:
-
-        self.vary = vary
 
         self.components: List[ResolutionComponent] = (
             [] if components is None else
-            [ResolutionComponent() for _ in range(components)] if isinstance(components, int) else
+            [ResolutionComponent() for _ in range(components)]
+                if isinstance(components, int) else
             [components] if isinstance(components, ResolutionComponent) else
             components
         )
@@ -161,6 +249,17 @@ class ResolutionComponents:
 
 
 class BackgroundComponent:
+    """Class representing a background component.
+
+    A background component consists of a single value.
+
+    Parameters
+    ----------
+    value : float or int or lmfit.Parameter or Tuple or List, optional
+        Value of the background. Gets converted to an lmfit.Parameter using
+        `parse_parameter_tuple` and stored under the `value` attribute.
+        The default value is 0.
+    """
     def __init__(
         self,
         value: float | int | lmfit.Parameter | Tuple | List = 0,
@@ -173,34 +272,74 @@ class BackgroundComponent:
                 *parse_parameter_tuple(value)
             )
         )
-        self.__name__ = "Background Component"
-
-    def __call__(self, t: np.ndarray, background: float | int):
-        return np.full(t.shape, background)
 
 
 class LifetimeModel:
+    """Class representing the theoretical model to describe a real lifetime
+    spectrum.
+
+    A lifetime model consists of
+
+    - at least one `LifetimeComponent`
+    - at least one `ResolutionComponent`
+    - an optional `BackgroundComponent`
+
+    Parameters
+    ----------
+    lifetime_components : int or LifetimeComponent or list of LifetimeComponent or LifetimeComponents, optional
+        Lifetime components of this model. Get stored under the
+        `lifetime_components` attribute which is of type `LifetimeComponents`.
+
+        - If an int, specifies with how many default `LifetimeComponent`s
+          `lifetime_components` is filled.
+        - If a `LifetimeComponent`, gets put into `lifetime_components`.
+        - If a list of `LifetimeComponent`s, gets converted to a
+          `LifetimeComponents` object.
+        - If `LifetimeComponents`, `lifetime_components` is a reference
+          to object.
+
+        The default is 1.
+    resolution_components : int or ResolutionComponent or list of ResolutionComponent or ResolutionComponents, optional
+        Resolution components of this model. Get stored under the
+        `resolution_components` attribute which is of type
+        `ResolutionComponents`.
+
+        - If an int, specifies with how many default `ResolutionComponent`s
+          `resolution_components` is filled.
+          - If a `ResolutionComponent`, gets put into `resolution_components`.
+        - If a list of `ResolutionComponent`s, gets converted to a
+        `ResolutionComponents` object.
+        - If `ResolutionComponents`, `resolution_components` is a reference
+          to object.
+
+        The default is 1.
+    background_component : BackgroundComponent or None, optional
+        Background component of this model. Get stored under the
+        `background_component` attribute. The default is None.
+    """
     def __init__(
         self,
         lifetime_components: int
             | LifetimeComponent
             | List[LifetimeComponent]
             | LifetimeComponents = 1,
-        resolution_components: None
+        resolution_components: int
             | ResolutionComponent
             | List[ResolutionComponent]
-            | ResolutionComponents = None,
+            | ResolutionComponents = 1,
         background_component: None
             | BackgroundComponent = None,
     ) -> None:
 
         self.lifetime_components = (
-            lifetime_components if isinstance(lifetime_components, LifetimeComponents) else
+            lifetime_components
+                if isinstance(lifetime_components, LifetimeComponents) else
             LifetimeComponents(lifetime_components)
         )
 
         self.resolution_components = (
-            resolution_components if isinstance(resolution_components, ResolutionComponents) else
+            resolution_components
+                if isinstance(resolution_components, ResolutionComponents) else
             ResolutionComponents(resolution_components)
         )
 
@@ -208,6 +347,45 @@ class LifetimeModel:
 
 
 def parse_model(model: Dict[str, Tuple] | None) -> LifetimeModel | None:
+    """Convert a dictionary of parameter attributes to a LifetimeModel.
+
+    Parameters
+    ----------
+    model : dict or None
+        Must be of the form `name: attributes`, where `name` is the parameter
+        name and `attributes` is a tuple of the four parameter attributes
+        `value` (float), `vary` (bool), `min` (float) and `max` (float).
+
+        The following names are recognized:
+
+        - `lifetime_{i}` for the lifetime value of `LifetimeComponent` i
+        - `intensity_{i}` for the intensity of `LifetimeComponent` i
+        - `res_sigma_{i}` for the standard deviation of `ResolutionComponent` i
+        - `res_intensity_{i}` for the intensity of `ResolutionComponent` i
+        - `res_t0_{i}` for the time offset of `ResolutionComponent` i
+        - `background` for the value of a `BackgroundComponent`.
+
+        Attribute tuples can be abbreviated by omitting elements accoring to the
+        following rules. The fallback values are defined in the corresponding
+        component's class.
+
+        - `max` can be omitted. E.g. `(1, True, 0)` defines\\
+           `value=1, vary=True, min=0, max=<default>`.
+        - `min` and `max` can be omitted. E.g. `(1, True)` defines\\
+          `value=1, vary=True, min=<default>, max=<default>`.
+        - `vary`, `min` and `max` can be omitted. In that case `attributes` does
+          not need to be a tuple but can be a single float. E.g. `1` defines\\
+          `value=1, vary=<default>, min=<default>, max=<default>`.
+        - `vary` can be omitted. E.g. `(1, 0, 2)` defines\\
+          `value=1, vary=<default>, min=0, max=2`.
+        - `vary` and `max` can be omitted. E.g. `(1, 0)` defines\\
+          `value=1, vary=<default>, min=0, max=<default>`.
+
+    Returns
+    -------
+    LifetimeModel or None
+        Assembled `LifetimeModel` or None if the input is None.
+    """
     if model is None or len(model) == 0:
         return None
 
@@ -257,6 +435,18 @@ def parse_model(model: Dict[str, Tuple] | None) -> LifetimeModel | None:
 
 
 def dump_model(model: LifetimeModel) -> Dict:
+    """Convert a LifetimeModel to a dictionary of parameter attributes.
+
+    Parameters
+    ----------
+    model : LifetimeModel
+        The `LifetimeModel` to convert.
+
+    Returns
+    -------
+    dict
+        The dictionary of the disassembled `LifetimeModel`.
+    """
     out = {}
 
     for i in range(len(model.lifetime_components)):
@@ -280,7 +470,28 @@ def dump_model(model: LifetimeModel) -> Dict:
     return out
 
 
-def combine_models(model1: LifetimeModel | Dict | None, model2: LifetimeModel | Dict | None) -> LifetimeModel | None:
+def combine_models(
+    model1: LifetimeModel | Dict | None,
+    model2: LifetimeModel | Dict | None
+) -> LifetimeModel | None:
+    """Merge two LifetimeModels into one.
+
+    Parameters
+    ----------
+    model1 : LifetimeModel or dict or None
+        The first `LifetimeModel`. Can be a dictionary of parameter attributes,
+        then it is assembled before it is merged. Can be None, then the two
+        models are not merged.
+    model2 : LifetimeModel or dict or None
+        The second `LifetimeModel`. Can be a dictionary of parameter attributes,
+        then it is assembled before it is merged. Can be None, then the two
+        models are not merged.
+
+    Returns
+    -------
+    LifetimeModel or None
+        The merged LifetimeModel or None if both inputs are None.
+    """
     if model1 is None and model2 is None:
         return None
     elif model1 is None:

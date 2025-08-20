@@ -2,34 +2,87 @@ from typing import List, Tuple, Dict, Self, Callable
 from types import EllipsisType
 from collections.abc import Sequence
 from copy import deepcopy
-import inspect
 from itertools import product
 import json
 
 import numpy as np
-from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 from matplotlib.gridspec import GridSpec
 from matplotlib.widgets import RangeSlider
 from scipy.special import erfc
 import lmfit
 
-from .model import LifetimeModel, combine_models, parse_model, dump_model, gauss
-from .utils import may_be_nan
+from .model import LifetimeModel, combine_models, parse_model, dump_model
+from .utils import may_be_nan, gauss
 
 
 sqrt_2 = np.sqrt(2)
-sqrt_2_pi = np.sqrt(2*np.pi)
+sqrt_2_pi = np.sqrt(2 * np.pi)
 sqrt_2_inv = 1 / sqrt_2
 sqrt_2_pi_inv = 1 / sqrt_2_pi
 
 
 class LifetimeSpectrum:
+    """Class representing a positron annihilation lifetime spectrum.
+
+    Parameters
+    ----------
+    spectrum : numpy.ndarray or sequence of int or None, optional
+        The measured histogram. If not None, it will be converted to a
+        numpy.ndarray and saved under the `spectrum` attribute. The default is
+        None.
+    detname: str, optional
+        Designation of the detector that recorded this spectrum. The default is
+        "A".
+    tcal: Sequence of float or None, optional
+        First order polynomial coefficients to convert channel numbers to time
+        with. The time is computes as `tcal[0] + channel * tcal[1]` and the
+        result stored under the `times` attribute. If None, `times` is also
+        None. The default is None.
+    name : str or None, optional
+        Name of this spectrum, saved under the `name` attribute. The default is
+        None.
+    lt_model: LifetimeModel or Dict or None, optional
+        Lifetime components to use in the fit. Can be a LifetimeModel object or
+        a dictionary from which a LifetimeModel can be assembled. Will be
+        combined with `res_model`. The default is None.
+    res_model: ResolutionModel or Dict or None, optional
+        Resolution model to use in the fit. Can be a LifetimeModel object or
+        a dictionary from which a LifetimeModel can be assembled. Will be
+        combined with `lt_model`. The default is None.
+    calibrate: bool, optional
+        Whether to allow the resolution components to vary. If False, the
+        provided model's vary options are ignored. The default is False.
+    show_fits: bool, optional
+        Whether to show plots of the fit results after fitting (calls
+        self.plot_fit_result). The default is True.
+    show: bool,
+        Whether to show debugging plots. The default is False.
+    verbose: bool,
+        Whether to print a fit report after fitting (calls self.fit_report).
+        The default is True.
+    autocompute: bool, optional
+        Whether to perform the fit if all prerequisites are fulfilled. The
+        prerequisites are
+
+        - `spectrum` is not None
+        - `tcal` is not None
+        - `lt_model` and `res_model` are not None
+
+        The default is True.
+    dtype: type or None = int,
+        Dtype passed to numpy.array when converting `spectrum`. The default is
+        int.
+    **kwargs
+        All other keyword arguments are passed to self.fit.
+    """
     def __init__(
         self,
-        spectrum: np.ndarray | List | Tuple | None = None,
+        spectrum: np.ndarray | Sequence[int] | None = None,
         detname: str = "A",
-        tcal: Tuple | List | None = None,
+        tcal: Sequence[float] | None = None,
         name : str | None = None,
         lt_model: LifetimeModel | Dict | None = None,
         res_model: LifetimeModel | Dict | None = None,
@@ -43,15 +96,15 @@ class LifetimeSpectrum:
     ) -> None:
 
         self.name = name
-        self.show_fits: bool = show_fits
-        self.show: bool = show
-        self.verbose: bool = verbose
-        self.detname: str = detname
+        self.show_fits = show_fits
+        self.show = show
+        self.verbose = verbose
+        self.detname = detname
 
         self.spectrum = None if spectrum is None else np.array(spectrum, dtype=dtype)
 
-        self.tcal: Tuple[float | int, ...] | List[float | int] | None = tcal
-        self.times: None | np.ndarray = None
+        self.tcal = tcal
+        self.times = None
         if tcal is not None and self.spectrum is not None:
             self.times = tcal[0] + tcal[1] * np.arange(len(self.spectrum))
 
@@ -73,13 +126,18 @@ class LifetimeSpectrum:
         self.model = combine_models(lt_model, res_model)
         self.input_model = None if self.model is None else deepcopy(self.model)
 
-        self.fit_result: None | lmfit.model.ModelResult = None
+        self.fit_result = None
 
         self.peak_center = np.nan
         self.dpeak_center = np.nan
 
         self.peak_fwhm = np.nan
         self.dpeak_fwhm = np.nan
+
+        self.counts = np.nan if self.spectrum is None else np.sum(self.spectrum)
+
+        self.mean_lifetime = np.nan
+        self.dmean_lifetime = np.nan
 
         self.bg = np.nan
 
@@ -103,13 +161,24 @@ class LifetimeSpectrum:
                     res_comp.intensity.vary = False
                     res_comp.t0.vary = False
 
-            self.l_vary = [lt.intensity.vary for lt in self.model.lifetime_components]
-            l_vary_idcs = [i for i, vary in enumerate(self.l_vary) if vary]
-            self.l_last_vary_idx = max(l_vary_idcs) if len(l_vary_idcs) > 0 else 0
+            self.n_l = len(self.model.lifetime_components)
+            self.n_r = len(self.model.resolution_components)
 
-            self.r_vary = [res.intensity.vary for res in self.model.resolution_components]
+            self.l_vary = [
+                lt.intensity.vary for lt in self.model.lifetime_components
+            ]
+            l_vary_idcs = [i for i, vary in enumerate(self.l_vary) if vary]
+            self.l_last_vary_idx = (
+                max(l_vary_idcs) if len(l_vary_idcs) > 0 else 0
+            )
+
+            self.r_vary = [
+                res.intensity.vary for res in self.model.resolution_components
+            ]
             r_vary_idcs = [j for j, vary in enumerate(self.r_vary) if vary]
-            self.r_last_vary_idx = max(r_vary_idcs) if len(r_vary_idcs) > 0 else 0
+            self.r_last_vary_idx = (
+                max(r_vary_idcs) if len(r_vary_idcs) > 0 else 0
+            )
 
         self.autocompute: bool = autocompute
         if (
@@ -146,6 +215,42 @@ class LifetimeSpectrum:
         return new
 
     def make_model_func(self):
+        """Define Model function and Jacobian suited to this spectrum's model.
+
+        The function and Jacobian are adapted for this spectrum's LifetimeModel.
+        The model must contain at least one lifetime and one resolution
+        component.
+
+        The function and Jacobian use transformed variables, called `h`, for the
+        intensities of components. The `h_i` range from 0 to 1. The components'
+        intensities are calculated from the `h_i` via
+
+        >>> intensity_1 = h_1
+        >>> intensity_2 = (1 - h_1) * h_2
+        >>> intensity_3 = (1 - h_1) * (1 - h_2) * h_3
+        >>> ...
+        >>> intensity_n_minus_1 = (1 - h_1) * ... * h_n_minus_1
+        >>> intensity_n = (1 - h_1) * ... * (1 - h_n_minus_1)
+
+        Notice that there are at most n - 1 free variables for n components
+        which is due to the boundary condition that all intensities must add up
+        to 1.
+
+        Returns
+        -------
+        Callable
+            The model function with signature `(t, **params)`.
+        Callable
+            The model function's Jacobian with signature
+            `(params, data, weights, t)`.
+
+        Raises
+        ------
+        AssertionError
+            - If `self.model` is None.
+            - If `self.model.lifetime_components` or
+              `self.model.resolution_components` are empty.
+        """
         assert self.model is not None
         assert len(self.model.lifetime_components) > 0
         assert len(self.model.resolution_components) > 0
@@ -153,19 +258,30 @@ class LifetimeSpectrum:
         self.n_l = n_l = len(self.model.lifetime_components)
         self.n_r = n_r = len(self.model.resolution_components)
 
-        self.l_vary = l_vary = [lt.intensity.vary for lt in self.model.lifetime_components]
+        self.l_vary = l_vary = [
+            lt.intensity.vary for lt in self.model.lifetime_components
+        ]
         l_vary_idcs = [i for i, vary in enumerate(self.l_vary) if vary]
-        self.l_last_vary_idx = l_last_vary_idx = max(l_vary_idcs) if len(l_vary_idcs) > 0 else 0
+        self.l_last_vary_idx = l_last_vary_idx = (
+            max(l_vary_idcs) if len(l_vary_idcs) > 0 else 0
+        )
 
-        self.r_vary = r_vary = [res.intensity.vary for res in self.model.resolution_components]
+        self.r_vary = r_vary = [
+            res.intensity.vary for res in self.model.resolution_components
+        ]
         r_vary_idcs = [j for j, vary in enumerate(self.r_vary) if vary]
-        self.r_last_vary_idx = r_last_vary_idx = max(r_vary_idcs) if len(r_vary_idcs) > 0 else 0
+        self.r_last_vary_idx = r_last_vary_idx = (
+            max(r_vary_idcs) if len(r_vary_idcs) > 0 else 0
+        )
 
-        def func(t, N, t0, background, **kwargs):
+        def func(t, **params):
+            N = params["N"]
+            t0 = params["t0"]
+            background = params["background"]
             y = np.zeros_like(t, dtype=float)
 
             l_int = [
-                kwargs[f"h_{i}"] if v else kwargs[f"intensity_{i}"]
+                params[f"h_{i}"] if v else params[f"intensity_{i}"]
                 for i, v in enumerate(l_vary, 1)
             ]
             l_cumul = sum(i for i, v in zip(l_int, l_vary) if not v)
@@ -175,7 +291,7 @@ class LifetimeSpectrum:
                     l_cumul += l_int[i]
 
             r_int = [
-                kwargs[f"res_h_{j}"] if v else kwargs[f"res_intensity_{j}"]
+                params[f"res_h_{j}"] if v else params[f"res_intensity_{j}"]
                 for j, v in enumerate(r_vary, 1)
             ]
             r_cumul = sum(i for i, v in zip(r_int, r_vary) if not v)
@@ -185,11 +301,11 @@ class LifetimeSpectrum:
                     r_cumul += r_int[j]
 
             for i, j in product(range(1, n_l+1), range(1, n_r+1)):
-                l_tau = kwargs[f"lifetime_{i}"]
+                l_tau = params[f"lifetime_{i}"]
                 l_i = l_int[i-1]
-                r_sigma = kwargs[f"res_sigma_{j}"]
+                r_sigma = params[f"res_sigma_{j}"]
                 r_i = r_int[j-1]
-                r_t0 = kwargs[f"res_t0_{j}"]
+                r_t0 = params[f"res_t0_{j}"]
                 # e becomes numerically unstable for lifetimes ~ tcal[1]
                 _t = t - (t0 + r_t0)
                 e = np.exp(-_t / l_tau + (r_sigma/(sqrt_2*l_tau))**2)
@@ -202,15 +318,15 @@ class LifetimeSpectrum:
                 print(f"{t0 = }")
                 print(f"{background = }")
                 for i in range(1, n_l+1):
-                    l = kwargs[f"lifetime_{i}"]
-                    h = kwargs[f"h_{i}"]
+                    l = params[f"lifetime_{i}"]
+                    h = params[f"h_{i}"]
                     print(f"lifetime_{i} = {l}")
                     print(f"h_{i} = {h}")
                     print(f"intensity_{i} = {l_int[i-1]}")
                 for j in range(1, n_r+1):
-                    s = kwargs[f"res_sigma_{j}"]
-                    h = kwargs[f"res_h_{j}"]
-                    t0 = kwargs[f"res_t0_{j}"]
+                    s = params[f"res_sigma_{j}"]
+                    h = params[f"res_h_{j}"]
+                    t0 = params[f"res_t0_{j}"]
                     print(f"res_sigma_{j} = {s}")
                     print(f"res_h_{j} = {h}")
                     print(f"res_t0_{j} = {t0}")
@@ -218,19 +334,6 @@ class LifetimeSpectrum:
                 print("-"*50)
 
             return N * y + background
-
-        p = lambda x: inspect.Parameter(x, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-
-        setattr(func, "__signature__", inspect.Signature([
-            p("t"), p("N"), p(f"t0"), p(f"background"),
-            *[p(f"lifetime_{i}") for i in range(1, n_l+1)],
-            *[p(f"intensity_{i}") for i in range(1, n_l+1)],
-            *[p(f"h_{i}") for i in range(1, n_l+1)],
-            *[p(f"res_sigma_{j}") for j in range(1, n_r+1)],
-            *[p(f"res_intensity_{j}") for j in range(1, n_r+1)],
-            *[p(f"res_h_{j}") for j in range(1, n_r+1)],
-            *[p(f"res_t0_{j}") for j in range(1, n_r+1)],
-        ]))
 
         def dfunc(params, data, weights, t):
             N = params["N"]
@@ -278,9 +381,18 @@ class LifetimeSpectrum:
                 y += decay
                 exp_comb = N * (l_i * r_i) / (sqrt_2_pi * l_tau) * np.exp(a - b**2)
 
-                df_dt0 = -exp_comb / r_sigma + decay / l_tau
-                df_dtau = exp_comb * r_sigma / l_tau**2 + decay * (-r_sigma**2/l_tau**3 + _t/l_tau**2 - 1/l_tau)
-                df_dsigma = decay * r_sigma / l_tau**2 - exp_comb * (1/l_tau + _t/r_sigma**2)
+                df_dt0 = (
+                    -exp_comb / r_sigma
+                    + decay / l_tau
+                )
+                df_dtau = (
+                    exp_comb * r_sigma / l_tau**2
+                    + decay * (-r_sigma**2/l_tau**3 + _t/l_tau**2 - 1/l_tau)
+                )
+                df_dsigma = (
+                    decay * r_sigma / l_tau**2
+                    - exp_comb * (1/l_tau + _t/r_sigma**2)
+                )
                 df_dr_t0 = df_dt0
 
                 terms[f"{i}_{j}"] = decay
@@ -316,9 +428,13 @@ class LifetimeSpectrum:
                     if n < k:
                         continue
                     elif n == k:
-                        df_dh_k.append(terms[f"{n}_{m}"] / (params[f"h_{k}"] + 1e-4))
+                        df_dh_k.append(
+                            terms[f"{n}_{m}"] / (params[f"h_{k}"] + 1e-4)
+                        )
                     else:
-                        df_dh_k.append(-terms[f"{n}_{m}"] / (1 - params[f"h_{k}"] + 1e-4))
+                        df_dh_k.append(
+                            -terms[f"{n}_{m}"] / (1 - params[f"h_{k}"] + 1e-4)
+                        )
 
                 df_dh_i.append(np.sum(df_dh_k, axis=0))
 
@@ -333,9 +449,13 @@ class LifetimeSpectrum:
                     if m < k:
                         continue
                     elif m == k:
-                        df_dres_h_k.append(terms[f"{n}_{m}"] / (params[f"res_h_{k}"] + 1e-4))
+                        df_dres_h_k.append(
+                            terms[f"{n}_{m}"] / (params[f"res_h_{k}"] + 1e-4)
+                        )
                     else:
-                        df_dres_h_k.append(-terms[f"{n}_{m}"] / (1 - params[f"res_h_{k}"] + 1e-4))
+                        df_dres_h_k.append(
+                            -terms[f"{n}_{m}"] / (1 - params[f"res_h_{k}"] + 1e-4)
+                        )
 
                 df_dres_h_j.append(np.sum(df_dres_h_k, axis=0))
 
@@ -375,6 +495,29 @@ class LifetimeSpectrum:
     def make_model(
         self,
     ) -> Tuple[lmfit.Model, lmfit.Parameters, Callable, Callable]:
+        """Construct lmfit model with fit function, parameters and Jacobian.
+
+        Returns
+        -------
+        lmfit.Model
+            The model initialized with the model function.
+        lmfit.Parameters
+            The parameters for the model.
+        Callable
+            The model function with signature `(t, **params)`.
+        Callable
+            The model function's Jacobian with signature
+            `(params, data, weights, t)`.
+
+        Raises
+        ------
+        AssertionError
+            - If `self.spectrum` is None
+            - If `self.times` is None
+            - If `self.model` is None
+            - If `self.model.lifetime_components` or
+              `self.model.resolution_components` are empty.
+        """
         assert self.spectrum is not None
         assert self.times is not None
         assert self.model is not None
@@ -462,9 +605,43 @@ class LifetimeSpectrum:
 
     def get_fit_range(
         self,
-        left_fit_idx: None | int = None,
-        right_fit_idx: None | int = None,
+        left_fit_idx: int | None = None,
+        right_fit_idx: int | None = None,
     ) -> Tuple[int, int]:
+        """Determine what part of the spectrum to use for the fit.
+
+        This method opens a matplotlib figure showing two subplots. The first
+        subplot shows the entire spectrum and the currently set beginning and
+        end of the fit range as vertical bars. The other subplot shows a
+        horizontal zoom-in of the currently set fit range of the spectrum. The
+        figure contains a range slider that allows to adjust the fit range while
+        the plots are automatically updated. When the figure is closed, the
+        currently set beginning and end of the fit range is returned.
+
+        Paramters
+        ---------
+        left_fit_idx : int or None, optional
+            Preset of the beginning of the fit range. If both `left_fit_idx`
+            and `right_fit_idx` are provided, this function will immediately
+            return those paramters without opening a figure.
+            The default is None.
+        right_fit_idx : int or None, optional
+            Preset of the end of the fit range. If both `left_fit_idx` and
+            `right_fit_idx` are provided, this function will immediately return
+            those paramters without opening a figure. The default is None.
+
+        Returns
+        -------
+        int
+            Channel index of the set beginning of the fit range.
+        int
+            Channel index of the set end of the fit range.
+
+        Raises
+        ------
+        AssertionError
+            - If `self.spectrum` is None
+        """
         # TODO: Outsource plotting code to a shared function (share with self.get_bg)
         assert self.spectrum is not None
 
@@ -534,6 +711,35 @@ class LifetimeSpectrum:
         bg_start_idx: None | int = None,
         bg_end_idx: None | int = None,
     ) -> None:
+        """Determine the background level of this spectrum.
+
+        This method opens a matplotlib figure showing two subplots. The first
+        subplot shows the entire spectrum and the currently set beginning and
+        end of the background range as vertical bars. The other subplot shows a
+        horizontal zoom-in of the currently set background range of the
+        spectrum. The figure contains a range slider that allows to adjust the
+        background range while the plots are automatically updated. When the
+        figure is closed, the background is computed by averaging the counts in
+        the currently selected range and the result is stored in `self.bg`.
+
+        Paramters
+        ---------
+        bg_start_idx : int or None, optional
+            Preset of the beginning of the background range. If both
+            `bg_start_idx` and `bg_end_idx` are provided, this function will
+            immediately compute the background in the specified range and not
+            open a figure. The default is None.
+        bg_end_idx : int or None, optional
+            Preset of the end of the background range. If both `bg_start_idx`
+            and `bg_end_idx` are provided, this function will immediately
+            compute the background in the specified range and not open a figure.
+            The default is None.
+
+        Raises
+        ------
+        AssertionError
+            - If `self.spectrum` is None
+        """
         # TODO: Outsource plotting code to a shared function (share with self.get_fit_range)
         assert self.spectrum is not None
 
@@ -600,13 +806,31 @@ class LifetimeSpectrum:
         self.bg = float(np.mean(self.spectrum[bg_start_idx:bg_end_idx]))
 
     def get_peak_center(self) -> None:
+        """Determine the position of the spectrum's peak maximum.
+
+        The maximum is determined by fitting a Gaussian to the spectrum in a 30
+        channel wide window around the bin with the highest number of counts.
+        The peak position and its uncertainty, both in units of the time
+        calibration, are stored under the `peak_center` and `dpeak_center`
+        attributes. The peak's FWHM and its uncertainty, also both in units of
+        the time calibration, are stored under the `peak_fwhm` and `dpeak_fwhm`
+        attributes.
+
+        The peak center is not to be confused with the time zero of the model!
+
+        Raises
+        ------
+        AssertionError
+            - If `self.spectrum` is None
+            - If `self.times` is None
+        """
         assert self.spectrum is not None
         assert self.times is not None
 
         # Initial Guesses
         peak_center_guess_idx = np.argmax(self.spectrum)
         t0_idx = np.argmax(self.spectrum)
-        n = np.sum(self.spectrum) * 2
+        n = self.counts * 2
         shift = self.times[t0_idx]
 
         peak_range = slice(peak_center_guess_idx-15, peak_center_guess_idx+15)
@@ -619,7 +843,7 @@ class LifetimeSpectrum:
 
         peak_params["amplitude"].set(value=n, min=0)
         peak_params["center"].set(value=shift)
-        peak_params["sigma"].set(value=n/(self.spectrum[t0_idx] * np.sqrt(2*np.pi)))
+        peak_params["sigma"].set(value=n/(self.spectrum[t0_idx] * sqrt_2_pi))
 
         peak_result = peak_model.fit(peak, x=peak_times, **peak_params)
 
@@ -651,6 +875,86 @@ class LifetimeSpectrum:
         bg_end_idx: int | None = None,
         get_bg: bool = False,
     ) -> None:
+        """Compute the necessary parameters for the fit.
+
+        This method
+            - converts the different ways to specify the fit range to absolute
+              channel indices.
+            - Saves views of the fit range of `self.spectrum` and `self.times`
+              under `self.trimmed_spectrum` and `self.trimmed_times`.
+            - opens the fit range determination prompt (`self.get_fit_range`) if
+              desired.
+            - opens the background determination prompt (`self.get_bg`) if
+              desired.
+
+        Parameters
+        ----------
+        fit_time_left_of_peak : int
+            Time in units of the time calibration to the left of the peak
+            maximum to use for fitting. Is overridden by any of the following
+            start parameters. The default is 300.
+        fit_time_right_of_peak : int
+            Same as `fit_time_left_of_peak` but to the right of the peak. Is
+            overridden by any of the following end parameters. The default is
+            3000.
+        fit_channels_left_of_peak : int or None, optional
+            Number of channels to the left of the peak maximum to use for
+            fitting. Overrides any previous start parameters. Is overridden by
+            any of the following start parameters.
+        fit_channels_right_of_peak : int or None, optional
+            Same as `fit fit_channels_left_of_peak` but to the right of the
+            peak. Overrides any previous end parameters. Is overridden by any
+            of the following end parameters.
+        fit_start_time : int or float or None, optional
+            Time in units of the time calibration to use as the beginning of
+            the range used for fitting. Overrides any previous start
+            parameters. Is overridden by any of the following start parameters.
+        fit_end_time : int or float or None, optional
+            Time in units of the time calibration to use as the end of
+            the range used for fitting. Overrides any previous end parameters.
+            Is overridden by any of the following end parameters.
+        fit_start_idx : int or None, optional
+            Channel index to use as the beginning of the range used for
+            fitting. Overrides any previous start parameters. Is overridden by
+            any of the following start parameters.
+        fit_end_idx : int or None, optional
+            Channel index to use as the end of the range used for fitting.
+            Overrides any previous end parameters. Is overridden by any of the
+            following end parameters.
+        fit_start_counts : int or None, optional
+            Threshold of counts defining the beginning of the fit range to the
+            left of the peak maximum. Overrides any previous start parameters.
+        fit_end_counts : int or None, optional
+            Threshold of counts defining the end of the fit range to the right
+            of the peak maximum. Overrides any previous end parameters.
+        get_fit_range: bool, optional
+            Whether to open a fit range determination prompt. The default is
+            False.
+        bg_start_idx : int or None, optional
+            Channel index in the uncut spectrum that marks the beginning of
+            the region to use to determine the background level. If
+            `bg_start_idx` and `bg_end_idx` are given and `get_bg` is True,
+            the background is taken as the average count per bin in the defined
+            region. If either or both parameters are None while `get_bg` is
+            True, a background determination prompt is opened. The default is
+            None.
+        bg_end_idx : int or None, optional
+            Same as `bg_start_idx` but for marking the end of the background
+            region. The default is None.
+        get_bg : bool, optional
+            Whether to compute the background level from a given region in the
+            spectrum. If `bg_start_idx` and `bg_end_idx` are given and `get_bg`
+            is True, the background is taken as the average count per bin in the
+            defined region. If either or both parameters are None while `get_bg`
+            is True, a background determination prompt is opened. If `get_bg` is
+            False, the background level is not determined. The default is False.
+
+        Raises
+        ------
+        AssertionError
+            - If `self.spectrum` is None
+            - If `self.times` is None
+        """
         assert self.spectrum is not None
         assert self.times is not None
 
@@ -804,10 +1108,17 @@ class LifetimeSpectrum:
             False, the background level is not determined. The default is False.
         **kwargs:
             Other keyword arguments are passed to lmfit.Model.fit.
+
+        Raises
+        ------
+        AssertionError
+            - If `self.spectrum` is None
+            - If `self.times` is None
+            - If `self.model` is None
         """
         err = "LifetimeSpectrum is missing {}. Could not fit"
         assert self.spectrum is not None, err.format("spectrum data")
-        assert self.times is not None and self.tcal is not None, err.format("time calibration")
+        assert self.times is not None, err.format("time calibration")
         assert self.model is not None, err.format("fit model")
 
         self.prepare_fit(
@@ -869,6 +1180,24 @@ class LifetimeSpectrum:
         return self.fit_result
 
     def post_fit(self) -> None:
+        """Transform and save fit results.
+
+        This method transforms the `h` parameters back to intensities,
+        overriding the fit result's "intensity" and removing the "h" parameters.
+        The lifetime and resolution components and their uncertainties are
+        stored under corresponding attributes. The mean lifetime is calculated
+        and stored under the attribute `mean_lifetime` and under the fit
+        result's parameters. `self.times` and `self.peak_center` are shifted
+        by the fit result for the time zero. `self.model` is updated to the
+        fit result values.
+
+        Raises
+        ------
+        AssertionError
+            - If `self.fit_result` is None.
+            - If `self.model.lifetime_components` or
+              `self.model.resolution_components` are empty.
+        """
         assert self.fit_result is not None
         assert self.n_l is not None and self.n_r is not None
         assert self.l_vary is not None and self.r_vary is not None
@@ -966,11 +1295,10 @@ class LifetimeSpectrum:
         dlifetimes = [may_be_nan(params[f"lifetime_{i}"].stderr) for i in range(1, self.n_l+1)]
         dintensities = [may_be_nan(params[f"intensity_{i}"].stderr) for i in range(1, self.n_l+1)]
 
-        self.mean_lifetime = np.nan
-        self.dmean_lifetime = np.nan
-
         self.mean_lifetime = sum([l * i for l, i in zip(lifetimes, intensities)])
-        self.dmean_lifetime = np.sqrt(np.sum(np.square([l * di + dl * i for l, dl, i, di in zip(lifetimes, dlifetimes, intensities, dintensities)])))
+        self.dmean_lifetime = np.sqrt(np.sum(np.square([
+            l * di + dl * i for l, dl, i, di in zip(lifetimes, dlifetimes, intensities, dintensities)
+        ])))
         params["mean_lifetime"] = lmfit.Parameter(
             "mean_lifetime",
             value=self.mean_lifetime,
@@ -981,7 +1309,29 @@ class LifetimeSpectrum:
             k: (v.value, v.vary, v.min, v.max) for k, v in params.items()
         })
 
-    def get_component_arrays(self) -> Tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
+    def get_component_arrays(
+        self
+    ) -> Tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
+        """Calculate what the contribution of individual components to the
+        spectrum looks like.
+
+        Returns
+        -------
+        numpy.ndarray
+            Times on which the resolution components were calculated.
+        list of numpy.ndarray
+            Lifetime components in the order of `self.fit_result.params`.
+        list of numpy.ndarray
+            Resolution components in the order of `self.fit_result.params`.
+
+        Raises
+        ------
+        AssertionError
+            - If `self.trimmed_spectrum` or `self.trimmed_times` is None.
+            - If `self.fit_result` is None.
+            - If `self.model.lifetime_components` or
+              `self.model.resolution_components` are empty.
+        """
         assert self.trimmed_spectrum is not None
         assert self.trimmed_times is not None
         assert self.fit_result is not None
@@ -1037,7 +1387,33 @@ class LifetimeSpectrum:
         self,
         show_init: bool = False,
         show: bool = True,
-    ) -> Tuple[Figure, Tuple[plt.Axes, ...]]:
+    ) -> Tuple[Figure, Tuple[Axes, ...]]:
+        """Plot fit result.
+
+        Parameters
+        ----------
+        show_init : bool, optional
+            Whether to show the initial fit. The default is False.
+        show : bool, optional
+            Whether to call `plt.show` on the figure before returning it. If
+            False, `ax.grid`, `ax.legend` and `plt.tight_layout` are also not
+            called to provide maximum customizability. The default is True.
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+            Created figure instance.
+        tuple of matplotlib.Axes
+            Tuple of subplots (as returned by `fig.add_subplot`).
+
+        Raises
+        ------
+        AssertionError
+            - If `self.trimmed_spectrum` or `self.trimmed_times` is None.
+            - If `self.fit_result` is None.
+            - If `self.model.lifetime_components` or
+              `self.model.resolution_components` are empty.
+        """
         assert self.trimmed_spectrum is not None
         assert self.trimmed_times is not None
         assert self.fit_result is not None
@@ -1110,7 +1486,14 @@ class LifetimeSpectrum:
         return fig, (ax1, ax2)
 
     def fit_report(self, sep: str = "") -> None:
-        err = "No fit has been performed yet and/or the fit prerequisites are not fulfilled"
+        """Print a fit report, PALSFIT style.
+
+        Paramters
+        ---------
+        sep : str, optional
+            Column separator character. Default is "".
+        """
+        err = "No fit has been performed yet"
         assert self.spectrum is not None, err
         assert self.model is not None, err
         assert self.fit_result is not None, err
@@ -1168,7 +1551,7 @@ class LifetimeSpectrum:
         print()
         print(f"Spectrum Name: {self.name}")
         print()
-        print(f"Statistics: {np.sum(self.spectrum):,}")
+        print(f"Statistics: {self.counts:,}")
         print(f"Number of Data Points: {result.ndata}")
         print()
         print(f"Lifetime Components:   {n_l}")
@@ -1224,7 +1607,9 @@ class LifetimeSpectrum:
         return out
 
     def dump_resolution_components(self, filepath=None):
-        assert self.model is not None
+        err = "No fit has been performed successfully"
+        assert self.model is not None, err
+        assert self.fit_result is not None, err
 
         out = dump_model(self.model)
 
@@ -1237,7 +1622,9 @@ class LifetimeSpectrum:
         return out
 
     def dump_lifetime_components(self, filepath=None):
-        assert self.model is not None
+        err = "No fit has been performed successfully"
+        assert self.model is not None, err
+        assert self.fit_result is not None, err
 
         out = dump_model(self.model)
 

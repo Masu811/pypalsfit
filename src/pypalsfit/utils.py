@@ -4,6 +4,11 @@ import time
 import warnings
 
 
+def gauss(x, mu, sig):
+    sig2 = sig**2
+    return 1 / np.sqrt(2 * np.pi * sig2) * np.exp(-0.5 / sig2 * (x - mu)**2)
+
+
 def may_be_nan(x):
     return x if x is not None else np.nan
 
