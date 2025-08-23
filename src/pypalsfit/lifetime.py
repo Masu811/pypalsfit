@@ -532,18 +532,28 @@ class LifetimeSpectrum:
         model = lmfit.Model(func)
         params = lmfit.Parameters()
 
-        l = np.min(self.times)
-        r = np.max(self.times)
-        d = r - l
+        #### General Parameters
 
-        # TODO: implement possibility to provide Parameters for N and t0
-        n = np.sum(self.spectrum) * 2
+        if self.model.scale_component is not None:
+            param = self.model.scale_component.value
+            param.name = "N"
+            param.min = max(0, param.min)
+            params.add(deepcopy(param))
+        else:
+            params.add("N", 2 * self.counts, min=0)
 
-        params.add("N", n, min=0)
-        params.add("t0", self.peak_center, min=l-d, max=r+d)
+        if self.model.shift_component is not None:
+            param = self.model.shift_component.value
+            param.name = "t0"
+            params.add(deepcopy(param))
+        else:
+            l = np.min(self.times)
+            r = np.max(self.times)
+            d = r - l
+            params.add("t0", self.peak_center, min=l-d, max=r+d)
 
         if self.model.background_component is not None:
-            param = self.model.background_component.background
+            param = self.model.background_component.value
             param.name = "background"
             if not np.isnan(self.bg):
                 param.value = self.bg
@@ -1156,7 +1166,7 @@ class LifetimeSpectrum:
             plt.tight_layout()
             plt.show()
 
-        if use_jacobian:
+        if use_jacobian and kwargs.get("method", "leastsq") == "leastsq":
             if "fit_kws" in kwargs:
                 kwargs["fit_kws"].update({"Dfun": dfunc, "col_deriv": True})
             else:

@@ -265,10 +265,62 @@ class BackgroundComponent:
         value: float | int | lmfit.Parameter | Tuple | List = 0,
     ) -> None:
 
-        self.background = (
+        self.value = (
             value if isinstance(value, lmfit.Parameter) else
             lmfit.Parameter(
                 "background",
+                *parse_parameter_tuple(value)
+            )
+        )
+
+
+class ScaleComponent:
+    """Class representing a scale component.
+
+    A scale component consists of a single value.
+
+    Parameters
+    ----------
+    value : float or int or lmfit.Parameter or Tuple or List, optional
+        Value of the scale. Gets converted to an lmfit.Parameter using
+        `parse_parameter_tuple` and stored under the `value` attribute.
+        The default value is 1.
+    """
+    def __init__(
+        self,
+        value: float | int | lmfit.Parameter | Tuple | List = 1,
+    ) -> None:
+
+        self.value = (
+            value if isinstance(value, lmfit.Parameter) else
+            lmfit.Parameter(
+                "N",
+                *parse_parameter_tuple(value)
+            )
+        )
+
+
+class ShiftComponent:
+    """Class representing a shift component.
+
+    A shift component consists of a single value.
+
+    Parameters
+    ----------
+    value : float or int or lmfit.Parameter or Tuple or List, optional
+        Value of the shift. Gets converted to an lmfit.Parameter using
+        `parse_parameter_tuple` and stored under the `value` attribute.
+        The default value is 0.
+    """
+    def __init__(
+        self,
+        value: float | int | lmfit.Parameter | Tuple | List = 0,
+    ) -> None:
+
+        self.value = (
+            value if isinstance(value, lmfit.Parameter) else
+            lmfit.Parameter(
+                "t0",
                 *parse_parameter_tuple(value)
             )
         )
@@ -283,6 +335,8 @@ class LifetimeModel:
     - at least one `LifetimeComponent`
     - at least one `ResolutionComponent`
     - an optional `BackgroundComponent`
+    - an optional `ScaleComponent`
+    - an optional `ShiftComponent`
 
     Parameters
     ----------
@@ -314,8 +368,14 @@ class LifetimeModel:
 
         The default is 1.
     background_component : BackgroundComponent or None, optional
-        Background component of this model. Get stored under the
+        Background component of this model. Gets stored under the
         `background_component` attribute. The default is None.
+    scale_component : ScaleComponent or None, optional
+        Scale component of this model. gets stored under the
+        `scale_component` attribute. The default is None.
+    shift_component : ShiftComponent or None, optional
+        Shift component of this model. Gets stored under the
+        `shift_component` attribute. The default is None.
     """
     def __init__(
         self,
@@ -329,6 +389,10 @@ class LifetimeModel:
             | ResolutionComponents = 1,
         background_component: None
             | BackgroundComponent = None,
+        scale_component: None
+            | ScaleComponent = None,
+        shift_component: None
+            | ShiftComponent = None,
     ) -> None:
 
         self.lifetime_components = (
@@ -344,6 +408,8 @@ class LifetimeModel:
         )
 
         self.background_component = background_component
+        self.scale_component = scale_component
+        self.shift_component = shift_component
 
 
 def parse_model(model: Dict[str, Tuple] | None) -> LifetimeModel | None:
@@ -363,7 +429,9 @@ def parse_model(model: Dict[str, Tuple] | None) -> LifetimeModel | None:
         - `res_sigma_{i}` for the standard deviation of `ResolutionComponent` i
         - `res_intensity_{i}` for the intensity of `ResolutionComponent` i
         - `res_t0_{i}` for the time offset of `ResolutionComponent` i
-        - `background` for the value of a `BackgroundComponent`.
+        - `background` for the value of a `BackgroundComponent`
+        - `N` for the value of a `ScaleComponent`
+        - `t0` for the value of a `ShiftComponent`.
 
         Attribute tuples can be abbreviated by omitting elements accoring to the
         following rules. The fallback values are defined in the corresponding
@@ -394,9 +462,17 @@ def parse_model(model: Dict[str, Tuple] | None) -> LifetimeModel | None:
     lifetime_components = []
     resolution_components = []
     background_component = None
+    scale_component = None
+    shift_component = None
 
     if "background" in model:
         background_component = BackgroundComponent(model.pop("background"))
+
+    if "n" in model:
+        scale_component = ScaleComponent(model.pop("n"))
+
+    if "t0" in model:
+        shift_component = ShiftComponent(model.pop("t0"))
 
     resolution_params = [key for key in model if key.startswith("res")]
     lifetime_params = [
@@ -430,7 +506,9 @@ def parse_model(model: Dict[str, Tuple] | None) -> LifetimeModel | None:
     return LifetimeModel(
         lifetime_components=lifetime_components,
         resolution_components=resolution_components,
-        background_component=background_component
+        background_component=background_component,
+        scale_component=scale_component,
+        shift_component=shift_component,
     )
 
 
@@ -464,8 +542,16 @@ def dump_model(model: LifetimeModel) -> Dict:
         out[f"res_t0_{j+1}"] = (p.value, p.vary, p.min, p.max)
 
     if model.background_component is not None:
-        p = model.background_component.background
+        p = model.background_component.value
         out["background"] = (p.value, p.vary, p.min, p.max)
+
+    if model.scale_component is not None:
+        p = model.scale_component.value
+        out["N"] = (p.value, p.vary, p.min, p.max)
+
+    if model.shift_component is not None:
+        p = model.shift_component.value
+        out["t0"] = (p.value, p.vary, p.min, p.max)
 
     return out
 
