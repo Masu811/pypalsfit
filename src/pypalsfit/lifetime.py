@@ -85,8 +85,8 @@ class LifetimeSpectrum:
         detname: str = "A",
         tcal: Sequence[float] | None = None,
         name : str | None = None,
-        lt_model: LifetimeModel | Dict | None = None,
-        res_model: LifetimeModel | Dict | None = None,
+        lt_model: LifetimeModel | Dict | str | None = None,
+        res_model: LifetimeModel | Dict | str | None = None,
         calibrate: bool = False,
         show_fits: bool = True,
         show: bool = False,
@@ -123,6 +123,19 @@ class LifetimeSpectrum:
             plt.legend()
             plt.tight_layout()
             plt.show()
+
+        if isinstance(lt_model, str):
+            with open(lt_model, "r") as f:
+                lt_model = json.load(f)
+        if isinstance(res_model, str):
+            with open(res_model, "r") as f:
+                res_model = json.load(f)
+
+        assert not isinstance(lt_model, str)
+        assert not isinstance(res_model, str)
+
+        # TODO: warn user if either model is of the form
+        # {Detector: {}} or {Measurement: {}}
 
         self.model = combine_models(lt_model, res_model)
         self.input_model = None if self.model is None else deepcopy(self.model)
@@ -710,6 +723,9 @@ class LifetimeSpectrum:
 
             slider.on_changed(update)
 
+            for ax in axs:
+                ax.grid()
+
             plt.show()
 
             left_fit_idx = lower_lim[0]
@@ -809,6 +825,9 @@ class LifetimeSpectrum:
 
             slider.on_changed(update)
 
+            for ax in axs:
+                ax.grid()
+
             plt.show()
 
             bg_start_idx = lower_lim[0]
@@ -816,7 +835,7 @@ class LifetimeSpectrum:
 
         self.bg = float(np.mean(self.spectrum[bg_start_idx:bg_end_idx]))
 
-    def get_peak_center(self) -> None:
+    def get_peak_center(self, window: int | None = None) -> None:
         """Determine the position of the spectrum's peak maximum.
 
         The maximum is determined by fitting a Gaussian to the spectrum in a 30
@@ -829,6 +848,12 @@ class LifetimeSpectrum:
 
         The peak center is not to be confused with the time zero of the model!
 
+        Parameters
+        ----------
+        window : int, optional
+            Window size in channels used to determine the peak center. If None,
+            defaults to 30. The default is None.
+
         Raises
         ------
         AssertionError
@@ -838,13 +863,21 @@ class LifetimeSpectrum:
         assert self.spectrum is not None
         assert self.times is not None
 
+        if window is None:
+            window = 30
+
         # Initial Guesses
         peak_center_guess_idx = np.argmax(self.spectrum)
         t0_idx = np.argmax(self.spectrum)
         n = self.counts * 2
         shift = self.times[t0_idx]
 
-        peak_range = slice(peak_center_guess_idx-15, peak_center_guess_idx+15)
+        half_window = int(window / 2)
+
+        peak_range = slice(
+            peak_center_guess_idx - half_window,
+            peak_center_guess_idx + half_window
+        )
         peak = self.spectrum[peak_range]
         peak_times = self.times[peak_range]
 
@@ -885,6 +918,7 @@ class LifetimeSpectrum:
         bg_start_idx: int | None = None,
         bg_end_idx: int | None = None,
         get_bg: bool = False,
+        peak_center_window: int | None = None,
     ) -> None:
         """Compute the necessary parameters for the fit.
 
@@ -959,6 +993,10 @@ class LifetimeSpectrum:
             defined region. If either or both parameters are None while `get_bg`
             is True, a background determination prompt is opened. If `get_bg` is
             False, the background level is not determined. The default is False.
+        peak_center_window : int or None, optional
+            Window size in channels used to determine the peak center via
+            `get_peak_center`. The default is None (see
+            `pypalsfit.LifetimeSpectrum.get_peak_center`).
 
         Raises
         ------
@@ -970,7 +1008,7 @@ class LifetimeSpectrum:
         assert self.times is not None
 
         if np.isnan(self.peak_center):
-            self.get_peak_center()
+            self.get_peak_center(peak_center_window)
 
         peak_idx = np.searchsorted(self.times, self.peak_center)
 
@@ -1038,6 +1076,7 @@ class LifetimeSpectrum:
         bg_start_idx: int | None = None,
         bg_end_idx: int | None = None,
         get_bg: bool = False,
+        peak_center_window: int | None = None,
         **kwargs
     ) -> lmfit.model.ModelResult:
         """Fit the spectrum to determine lifetimes and intensities.
@@ -1117,6 +1156,9 @@ class LifetimeSpectrum:
             defined region. If either or both parameters are None while `get_bg`
             is True, a background determination prompt is opened. If `get_bg` is
             False, the background level is not determined. The default is False.
+        peak_center_window : int or None, optional
+            Window size in channels used to determine the peak center via
+            `get_peak_center`. The default is None.
         **kwargs:
             Other keyword arguments are passed to lmfit.Model.fit.
 
@@ -1141,14 +1183,17 @@ class LifetimeSpectrum:
             get_fit_range,
             bg_start_idx, bg_end_idx,
             get_bg,
+            peak_center_window
         )
 
         assert self.trimmed_spectrum is not None
         assert self.trimmed_times is not None
 
-        model, params, func, dfunc = self.make_model()
+        model, params, _, dfunc = self.make_model()
 
-        weights = np.sqrt(1/np.where(self.trimmed_spectrum > 0, self.trimmed_spectrum, 1))
+        weights = np.sqrt(
+            1 / np.where(self.trimmed_spectrum > 0, self.trimmed_spectrum, 1)
+        )
 
         if self.show:
             plt.figure()
@@ -1452,9 +1497,9 @@ class LifetimeSpectrum:
 
         ### Resolution Function and Components
 
+        ax3.semilogy(t_res, res, label="Total")
         for i, c in enumerate(res_components, 1):
             ax3.semilogy(t_res, c, label=f"Component {i}")
-        ax3.semilogy(t_res, res, label="Total")
         ax3.set_title("Resolution Components")
         ax3.set_xlabel("Time [ps]")
         ax3.set_ylim((1e-6, np.max(res)*1.1))
@@ -1481,7 +1526,9 @@ class LifetimeSpectrum:
         )
 
         for i, c in enumerate(lt_components, 1):
-            ax2.semilogy(t, c, label=f"Component {i}", c=f"C{i+2}")
+            ax2.semilogy(
+                t, c, label=f"Component {i}", c=f"C{i+2}", linestyle="--",
+            )
 
         ax2.set_ylim(ylim)
 
@@ -1518,6 +1565,12 @@ class LifetimeSpectrum:
         headers = ["Parameter", "Value", "Stderr (abs)", "Stderr (rel)",
                    "Min", "Max", "Fixed", ""]
         formats = ["<", ">", ">", ">", ">", ">", "<", "<"]
+
+        lt_norm = sum([l.intensity.value for l in self.model.lifetime_components])
+        res_norm = sum([r.intensity.value for r in self.model.resolution_components])
+
+        lt_norm_okay = abs(lt_norm - 1) < 1e-3
+        res_norm_okay = abs(res_norm - 1) < 1e-3
 
         def print_params(params):
             table_data = np.array([
@@ -1589,6 +1642,10 @@ class LifetimeSpectrum:
         print(f"{' Lifetime Components ':=^100}")
         print()
 
+        if not lt_norm_okay:
+            print("!!! intensities don't add up to 100% !!!")
+            print()
+
         params = ["lifetime", "intensity"]
         params = [f"{p}_{i}" for p in params for i in range(1, n_l+1)]
         print_params([rparams[p] for p in params])
@@ -1596,6 +1653,10 @@ class LifetimeSpectrum:
         print()
         print(f"{' Resolution Components ':=^100}")
         print()
+
+        if not res_norm_okay:
+            print("!!! intensities don't add up to 100% !!!")
+            print()
 
         params = ["res_sigma", "res_intensity", "res_t0"]
         params = [f"{p}_{i}" for p in params for i in range(1, n_r+1)]

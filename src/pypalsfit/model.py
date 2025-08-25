@@ -483,8 +483,8 @@ def parse_model(model: Dict[str, Tuple] | None) -> LifetimeModel | None:
     r_indices = {int(p.split("_")[2]) for p in resolution_params}
     l_indices = {int(p.split("_")[1]) for p in lifetime_params}
 
-    n_r = max(r_indices)
-    n_l = max(l_indices)
+    n_r = 0 if len(r_indices) == 0 else max(r_indices)
+    n_l = 0 if len(l_indices) == 0 else max(l_indices)
 
     for j in range(1, n_r+1):
         resolution_components.append(
@@ -588,6 +588,38 @@ def combine_models(
     model1_dict = dump_model(model1) if isinstance(model1, LifetimeModel) else model1
     model2_dict = dump_model(model2) if isinstance(model2, LifetimeModel) else model2
 
-    model1_dict.update(model2_dict)
+    return parse_model(model1_dict | model2_dict)
 
-    return parse_model(model1_dict)
+
+def pick_model(
+    models: dict | LifetimeModel | None,
+    keys: list[str] | None,
+    metadata: dict[str, str],
+    kind: str,
+    name: str | None = None,
+    debug: bool = False,
+) -> dict | LifetimeModel | None:
+    if not isinstance(models, dict) or keys is None or not any(key.startswith("Measurement") for key in models):
+        return models
+
+    params = {k: str(metadata[k]) for k in keys}
+
+    if debug:
+        print(f"Picking a {kind} model for measurement with parameters {params}...")
+
+    for name, model in models.items():
+        metadata = model["Metadata"]
+        model_params = {k: str(metadata[k]) for k in keys}
+        if params == model_params:
+            if debug:
+                print(f"Picking {name}")
+            return model
+
+    err = (
+        f"No provided {kind} model matches this "
+        "LifetimeMeasurement's parameters:"
+        f"\nMeasurement: {name}"
+        f"\nParameters: {params}"
+    )
+    raise ValueError(err)
+

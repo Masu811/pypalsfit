@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import lmfit
 
 from .lifetime import LifetimeSpectrum
-from .model import LifetimeModel, parse_parameter_tuple, dump_model
+from .model import LifetimeModel, parse_parameter_tuple, pick_model
 from .utils import Filter, isfinite, _check_input, _split_params, progress
 
 
@@ -171,11 +171,6 @@ class LifetimeMeasurement:
             self.spectra = m.spectra
             self.metadata = m.metadata
 
-            if not isinstance(lt_model, str):
-                lt_model = deepcopy(lt_model)
-            if not isinstance(res_model, str):
-                res_model = deepcopy(res_model)
-
             if isinstance(lt_model, str):
                 with open(lt_model, "r") as f:
                     lt_model = json.load(f)
@@ -183,34 +178,11 @@ class LifetimeMeasurement:
                 with open(res_model, "r") as f:
                     res_model = json.load(f)
 
-            for kind, models, keys in zip(
-                ["lifetime", "resolution"], [lt_model, res_model], [lt_keys, res_keys]
-            ):
-                if not isinstance(models, dict) or keys is None or not any(key.startswith("Measurement") for key in models):
-                    continue
+            assert not isinstance(lt_model, str)
+            assert not isinstance(res_model, str)
 
-                params = {k: str(self.metadata[k]) for k in keys}
-
-                if debug:
-                    print(f"Picking a {kind} model for measurement with parameters {params}...")
-
-                for name, model in models.items():
-                    metadata = model["Metadata"]
-                    model_params = {k: str(metadata[k]) for k in keys}
-                    if params == model_params:
-                        models.clear()
-                        models.update(model)
-                        if debug:
-                            print(f"Picking {name}")
-                        break
-                else:
-                    err = (
-                        f"No provided {kind} model matches this "
-                        "LifetimeMeasurement's parameters:"
-                        f"\nMeasurement: {self.name}"
-                        f"\nParameters: {params}"
-                    )
-                    raise ValueError(err)
+            lt_model = pick_model(lt_model, lt_keys, self.metadata, "lifetime", self.name, debug)
+            res_model = pick_model(res_model, res_keys, self.metadata, "resolution", self.name, debug)
 
             if not isinstance(lt_model, dict) or not any(key.startswith("Detector") for key in lt_model):
                 lt_model = {
@@ -2855,8 +2827,112 @@ class MeasurementCampaign:
         bg_start_idx: int | None = None,
         bg_end_idx: int | None = None,
         get_bg: bool = False,
+        peak_center_window: int | None = None,
         **kwargs
     ) -> None:
+        """Fit spectra with shared parameters.
+
+        The fit is performed by constructing one shared data set, model and
+        model function, essentially fitting all spectra simultaneously. After
+        fitting, the shared result is distributed onto the individual spectra as
+        if they had been fit individually.
+
+        The shared parameters must be included in every spectrum's `model`.
+        Individual spectra's `model`s must not be None.
+
+        Parameters
+        ----------
+        shared_params : lmfit.Parameters or dict
+            Shared parameters. They are shared among all spectra while fitting
+            and varied to reduce the total chi squared.  The shared parameters
+            override the individual spectra's model parameters.
+        fit_time_left_of_peak : int
+            Time in units of the time calibration to the left of the peak
+            maximum to use for fitting. Is overridden by any of the following
+            start parameters. The default is 300.
+        fit_time_right_of_peak : int
+            Same as `fit_time_left_of_peak` but to the right of the peak. Is
+            overridden by any of the following end parameters. The default is
+            3000.
+        fit_channels_left_of_peak : int or None, optional
+            Number of channels to the left of the peak maximum to use for
+            fitting. Overrides any previous start parameters. Is overridden by
+            any of the following start parameters.
+        fit_channels_right_of_peak : int or None, optional
+            Same as `fit fit_channels_left_of_peak` but to the right of the
+            peak. Overrides any previous end parameters. Is overridden by any
+            of the following end parameters.
+        fit_start_time : int or float or None, optional
+            Time in units of the time calibration to use as the beginning of
+            the range used for fitting. Overrides any previous start
+            parameters. Is overridden by any of the following start parameters.
+        fit_end_time : int or float or None, optional
+            Time in units of the time calibration to use as the end of
+            the range used for fitting. Overrides any previous end parameters.
+            Is overridden by any of the following end parameters.
+        fit_start_idx : int or None, optional
+            Channel index to use as the beginning of the range used for
+            fitting. Overrides any previous start parameters. Is overridden by
+            any of the following start parameters.
+        fit_end_idx : int or None, optional
+            Channel index to use as the end of the range used for fitting.
+            Overrides any previous end parameters. Is overridden by any of the
+            following end parameters.
+        fit_start_counts : int or None, optional
+            Threshold of counts defining the beginning of the fit range to the
+            left of the peak maximum. Overrides any previous start parameters.
+        fit_end_counts : int or None, optional
+            Threshold of counts defining the end of the fit range to the right
+            of the peak maximum. Overrides any previous end parameters.
+        get_fit_range: bool, optional
+            Whether to open a fit range determination prompt. The default is
+            False.
+        channel_mask : Sequence of bool or Sequence of int or Ellipsis, optional
+            Boolean mask or fancy index set to determine, which parts in the
+            cut spectrum to use in the fit and which parts to ignore.
+            The default is Ellipsis (use all).
+        use_jacobian : bool, optional
+            Whether to use the analytical Jacobian matrix during fitting.
+            Using the analytical Jacobian generally reduces the number of
+            function evaluations required to find the optimum. If disabled,
+            the Jacobian is numerically computed. A reason for disabling the
+            use of the analytical Jacobian is for example that in the case of
+            relatively strict parameter bounds a fit with analytical Jacobian
+            may fail where a fit without it would still succeed. For more info
+            see the docs of the underlying lmfit.Model.fit and
+            scipy.optimize.leastsq function. The default is True.
+        bg_start_idx : int or None, optional
+            Channel index in the uncut spectrum that marks the beginning of
+            the region to use to determine the background level. If
+            `bg_start_idx` and `bg_end_idx` are given and `get_bg` is True,
+            the background is taken as the average count per bin in the defined
+            region. If either or both parameters are None while `get_bg` is
+            True, a background determination prompt is opened. The default is
+            None.
+        bg_end_idx : int or None, optional
+            Same as `bg_start_idx` but for marking the end of the background
+            region. The default is None.
+        get_bg : bool, optional
+            Whether to compute the background level from a given region in the
+            spectrum. If `bg_start_idx` and `bg_end_idx` are given and `get_bg`
+            is True, the background is taken as the average count per bin in the
+            defined region. If either or both parameters are None while `get_bg`
+            is True, a background determination prompt is opened. If `get_bg` is
+            False, the background level is not determined. The default is False.
+        peak_center_window : int or None, optional
+            Window size in channels used to determine the peak center via
+            `get_peak_center`. The default is None (see
+            `pypalsfit.LifetimeSpectrum.get_peak_center`).
+        **kwargs:
+            Other keyword arguments are passed to lmfit.Model.fit.
+
+        Raises
+        ------
+        AssertionError
+            - If this `MeasurementCampaign` is not homogeneous.
+            - If any spectrum's `spectrum` or `times` is None.
+            - If any spectrum's `model` is None.
+        """
         assert self.is_homogeneous()
         assert isinstance(shared_params, (lmfit.Parameters, dict))
 
@@ -2878,8 +2954,8 @@ class MeasurementCampaign:
         for m in self:
             for s in m:
                 assert s.model is not None, err1
-                model_p = set(dump_model(s.model).keys())
-                assert all(shared_p in model_p for shared_p in shared_p_names), err2
+                # model_p = set(dump_model(s.model).keys())
+                # assert all(shared_p in model_p for shared_p in shared_p_names), err2
 
         # Put together all shared data
 
@@ -2902,6 +2978,7 @@ class MeasurementCampaign:
                     get_fit_range,
                     bg_start_idx, bg_end_idx,
                     get_bg,
+                    peak_center_window,
                 )
 
                 shared_spectrum.append(s.trimmed_spectrum)
@@ -2991,7 +3068,9 @@ class MeasurementCampaign:
 
         shared_model = lmfit.Model(shared_func)
 
-        weights = np.sqrt(1/np.where(shared_spectrum > 0, shared_spectrum, 1))
+        shared_weights = np.sqrt(
+            1 / np.where(shared_spectrum > 0, shared_spectrum, 1)
+        )
 
         if use_jacobian:
             if "fit_kws" in kwargs:
@@ -3004,7 +3083,7 @@ class MeasurementCampaign:
         shared_result = shared_model.fit(
             shared_spectrum,
             params=shared_params,
-            weights=weights,
+            weights=shared_weights,
             **kwargs
         )
 
@@ -3026,7 +3105,7 @@ class MeasurementCampaign:
 
                 s.fit_result.params = lmfit.Parameters()
                 for p in separate_p_names[idx]:
-                    param = shared_result.params[p]
+                    param = deepcopy(shared_result.params[p])
                     param.name = param.name.split("__")[-1]
                     s.fit_result.params.add(param)
 
