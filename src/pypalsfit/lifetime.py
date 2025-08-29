@@ -13,6 +13,7 @@ from matplotlib.axes import Axes
 from matplotlib.gridspec import GridSpec
 from matplotlib.widgets import RangeSlider
 from scipy.special import erfc
+from scipy.ndimage import gaussian_filter1d
 import lmfit
 
 from .model import LifetimeModel, combine_models, parse_model, dump_model
@@ -1664,6 +1665,88 @@ class LifetimeSpectrum:
 
         print()
         print("-"*100)
+
+    def deconvolve(
+        self,
+        lifetime_components: LifetimeModel | dict,
+        smoothing_factor: float = 1,
+    ) -> np.ndarray:
+        """Deconvolve the spectrum to obtain the resolution function.
+
+        """
+        x = self.trimmed_times
+        y = self.trimmed_spectrum
+
+        assert np.min(x) < 0 and np.max(x) > 0
+
+        model = lifetime_components if isinstance(lifetime_components, LifetimeModel) else parse_model(lifetime_components)
+
+        lifetime_kernel = np.zeros_like(x)
+
+        for lt_component in model.lifetime_components:
+            i = lt_component.intensity.value
+            tau = lt_component.lifetime.value
+            lifetime_kernel += (
+                i / tau * np.exp(-x / tau)
+            )
+
+        y_ft = np.fft.fft(y)
+        lt_kernel_ft = np.fft.fft(lifetime_kernel)
+
+        res_kernel_ft = y_ft / lt_kernel_ft
+
+        res_kernel = np.fft.ifft(res_kernel_ft).real
+
+        if smoothing_factor > 0:
+            res_kernel = gaussian_filter1d(res_kernel, smoothing_factor, mode="nearest")
+
+        plt.plot(res_kernel)
+        plt.show()
+
+        return res_kernel
+
+    def deconvolution_fit(
+        self,
+        lifetime_components,
+        res_components,
+    ):
+        res_kernel = self.deconvolve(lifetime_components, 0)
+
+        res_kernel /= np.sum(res_kernel)
+
+        res_kernel = np.where(res_kernel < 0, 0, res_kernel)
+        x = self.trimmed_times
+
+        res_model = res_components if isinstance(res_components, LifetimeModel) else parse_model(res_components)
+
+        fit_model = lmfit.models.ConstantModel()
+        params = lmfit.Parameters()
+        params.add("c", value=np.mean(res_kernel[-50:]))
+
+        center = x[np.argmax(res_kernel)]
+
+        for i, res_component in enumerate(res_model.resolution_components):
+            fit_model += lmfit.models.GaussianModel(prefix=f"r{i}_")
+            params.add(f"r{i}_amplitude", value=res_component.intensity.value)
+            params.add(f"r{i}_center", value=center + res_component.t0.value)
+            params.add(f"r{i}_sigma", value=res_component.sigma.value)
+
+        weights = np.sqrt(
+            1 / np.where(res_kernel > 0, res_kernel, np.inf)
+        )
+
+        result = fit_model.fit(
+            res_kernel,
+            x=x,
+            params=params,
+            weights=weights,
+        )
+
+        print(result.fit_report())
+
+        result.plot(show_init=True, yerr=np.zeros_like(x))
+        plt.yscale("log")
+        plt.show()
 
     def dump_components(
         self,
