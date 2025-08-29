@@ -1,16 +1,16 @@
-Date                         20.06.25
-Time                         19.29.46
-Projekt Name                 5_YSZ-Ref-02_2.00keV_295.15K_10.0Mio
+Date                         21.06.25
+Time                         01.19.22
+Projekt Name                 1_Kapton-Bulk_10.00keV_295.15K_20.0Mio
 Author                       Hirschmann
 Sample                       YSZ
 Source                       ELBE
 Notes                        Beamtime-06-2025
-Path                         /hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/YSZ-Ref-02
+Path                         /hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/25103707-DanielRussell/4-Kapton-Bulk
 Time-Range in ns             380
 Channel-Dispersion in ns     0.003
-Measured Time in s           253.009
-Global Count-Rate in 1/s     39558.3
-Global Statistic             10008615
+Measured Time in s           264.18
+Global Count-Rate in 1/s     75714.5
+Global Statistic             20002253
 Global Super Single Ratio    0
 -----------------------------
 
@@ -34,19 +34,18 @@ PMT Voltage in V             1500
 PMT Attanuation in dB        6
 PMT Threshold in V           0.05
 PMT CF-Level in %            0.05
-PMT EtoV                     0.000932354
-PMT Window autotuned         YES
-PMT Stop-Winodw in keV       320 - 650
-PMT Start-Window in keV      200 - 200
-PMT Energy Filter Ratio in % 38.0591
+PMT EtoV                     0.0009862
+PMT Window autotuned         NO
+PMT Stop-Winodw in V         0.1 - 0.9
+PMT Start-Window in V        2 - 2
 -----------------------------
 
 Spectrum Nr                  0
-Spectrum Statistic           10008615
-Spectrum Count-Rate          39558.3
-Spectrum Center in ps        -211.322
-Spectrum Maximum             72460
-Spectrum FWHM in ps          351
-Spectrum FWXM in ps          771
-Spectrum Peak Pos Stop in V  0.842547
-Spectrum Peak FWHM Stop in V 0.00147578
+Spectrum Statistic           20002253
+Spectrum Count-Rate          75714.5
+Spectrum Center in ps        -222.356
+Spectrum Maximum             91731
+Spectrum FWHM in ps          537
+Spectrum FWXM in ps          1281
+Spectrum Peak Pos Stop in V  0.842204
+Spectrum Peak FWHM Stop in V 0.00167773

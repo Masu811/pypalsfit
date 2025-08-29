@@ -1,0 +1,51 @@
+Date                         21.06.25
+Time                         01.24.57
+Projekt Name                 2_Kapton-Bulk_0.50keV_295.15K_20.0Mio
+Author                       Hirschmann
+Sample                       YSZ
+Source                       ELBE
+Notes                        Beamtime-06-2025
+Path                         /hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/25103707-DanielRussell/4-Kapton-Bulk
+Time-Range in ns             380
+Channel-Dispersion in ns     0.003
+Measured Time in s           321.014
+Global Count-Rate in 1/s     62303.5
+Global Statistic             20000300
+Global Super Single Ratio    0
+-----------------------------
+
+PMT                          0
+PMT Typ                      MINT
+PMT Scintillator             No
+PMT Voltage in V             0
+PMT Attanuation in dB        0
+PMT Threshold in V           0.3
+PMT CF-Level in %            0.5
+PMT EtoV                     1
+PMT Window autotuned         NO
+PMT Stop-Winodw in V         2 - 2
+PMT Start-Window in V        0.7 - 0.9
+-----------------------------
+
+PMT                          1
+PMT Typ                      R13089
+PMT Scintillator             CeBr3 1''2''
+PMT Voltage in V             1500
+PMT Attanuation in dB        6
+PMT Threshold in V           0.05
+PMT CF-Level in %            0.05
+PMT EtoV                     0.0009862
+PMT Window autotuned         NO
+PMT Stop-Winodw in V         0.1 - 0.9
+PMT Start-Window in V        2 - 2
+-----------------------------
+
+Spectrum Nr                  0
+Spectrum Statistic           20000300
+Spectrum Count-Rate          62303.5
+Spectrum Center in ps        -203.678
+Spectrum Maximum             79687
+Spectrum FWHM in ps          600
+Spectrum FWXM in ps          1389
+Spectrum Peak Pos Stop in V  0.842
+Spectrum Peak FWHM Stop in V 0

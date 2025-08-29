@@ -1,6 +1,6 @@
 Date                         20.06.25
-Time                         19.43.49
-Projekt Name                 8_YSZ-Ref-02_3.50keV_295.15K_10.0Mio
+Time                         20.11.25
+Projekt Name                 14_YSZ-Ref-02_6.50keV_295.15K_10.0Mio
 Author                       Hirschmann
 Sample                       YSZ
 Source                       ELBE
@@ -8,9 +8,9 @@ Notes                        Beamtime-06-2025
 Path                         /hzdr/files/share/fwk/EPOS/MePS/Measurements/2025-06/YSZ-Ref-02
 Time-Range in ns             380
 Channel-Dispersion in ns     0.003
-Measured Time in s           252.747
-Global Count-Rate in 1/s     39569.6
-Global Statistic             10001108
+Measured Time in s           185.327
+Global Count-Rate in 1/s     33149.1
+Global Statistic             6143419
 Global Super Single Ratio    0
 -----------------------------
 
@@ -34,19 +34,19 @@ PMT Voltage in V             1500
 PMT Attanuation in dB        6
 PMT Threshold in V           0.05
 PMT CF-Level in %            0.05
-PMT EtoV                     0.000939866
+PMT EtoV                     0.000938576
 PMT Window autotuned         YES
 PMT Stop-Winodw in keV       320 - 650
 PMT Start-Window in keV      200 - 200
-PMT Energy Filter Ratio in % 37.6063
+PMT Energy Filter Ratio in % 37.0483
 -----------------------------
 
 Spectrum Nr                  0
-Spectrum Statistic           10001108
-Spectrum Count-Rate          39569.6
-Spectrum Center in ps        -215.252
-Spectrum Maximum             74677
-Spectrum FWHM in ps          345
-Spectrum FWXM in ps          759
-Spectrum Peak Pos Stop in V  0.842621
-Spectrum Peak FWHM Stop in V 0.00145029
+Spectrum Statistic           6143419
+Spectrum Count-Rate          33151.9
+Spectrum Center in ps        -219.587
+Spectrum Maximum             39492
+Spectrum FWHM in ps          333
+Spectrum FWXM in ps          741
+Spectrum Peak Pos Stop in V  0.842691
+Spectrum Peak FWHM Stop in V 0.00143317

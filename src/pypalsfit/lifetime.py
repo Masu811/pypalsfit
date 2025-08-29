@@ -443,11 +443,11 @@ class LifetimeSpectrum:
                         continue
                     elif n == k:
                         df_dh_k.append(
-                            terms[f"{n}_{m}"] / (params[f"h_{k}"] + 1e-4)
+                            terms[f"{n}_{m}"] / (params[f"h_{k}"] + 1e-5)
                         )
                     else:
                         df_dh_k.append(
-                            -terms[f"{n}_{m}"] / (1 - params[f"h_{k}"] + 1e-4)
+                            -terms[f"{n}_{m}"] / (1 - params[f"h_{k}"] + 1e-5)
                         )
 
                 df_dh_i.append(np.sum(df_dh_k, axis=0))
@@ -464,7 +464,7 @@ class LifetimeSpectrum:
                         continue
                     elif m == k:
                         df_dres_h_k.append(
-                            terms[f"{n}_{m}"] / (params[f"res_h_{k}"] + 1e-4)
+                            terms[f"{n}_{m}"] / (params[f"res_h_{k}"] + 1e-5)
                         )
                     else:
                         df_dres_h_k.append(
@@ -1497,9 +1497,9 @@ class LifetimeSpectrum:
 
         ### Resolution Function and Components
 
-        ax3.semilogy(t_res, res, label="Total")
+        ax3.semilogy(t_res, res, label="Total", zorder=99)
         for i, c in enumerate(res_components, 1):
-            ax3.semilogy(t_res, c, label=f"Component {i}")
+            ax3.semilogy(t_res, c, label=f"Component {i}", linestyle="--")
         ax3.set_title("Resolution Components")
         ax3.set_xlabel("Time [ps]")
         ax3.set_ylim((1e-6, np.max(res)*1.1))
@@ -1517,12 +1517,12 @@ class LifetimeSpectrum:
         if show_init:
             ax2.plot(
                 t, self.fit_result.init_fit, linestyle="--",
-                c="C1", label="Initial Fit"
+                c="C1", label="Initial Fit", zorder=98,
             )
 
         ax2.plot(
             t, self.fit_result.best_fit, linestyle="-",
-            c="C2", label="Best Fit"
+            c="C2", label="Best Fit", zorder=99,
         )
 
         for i, c in enumerate(lt_components, 1):
