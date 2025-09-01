@@ -1,5 +1,5 @@
 numpy
 scipy
 matplotlib
-lmfit
+lmfit >= 1.3.3
 pandas
