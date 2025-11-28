@@ -93,16 +93,18 @@ class LifetimeSpectrum:
         verbose: bool = False,
         autocompute: bool = True,
         dtype: type | None = None,
-        **kwargs
+        debug: bool = False,
+        **kwargs,
     ) -> None:
-
         self.name = name
         self.show_fits = show_fits
         self.show = show
         self.verbose = verbose
-        self.detname = detname
+        self.debug = debug
 
         self.spectrum = None if spectrum is None else np.array(spectrum, dtype=dtype)
+
+        self.detname = detname
 
         self.tcal = tcal
         self.times = None
