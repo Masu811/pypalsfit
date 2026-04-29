@@ -1,5 +1,6 @@
 from typing import List, Dict, Tuple
 
+from lmfit.model import ModelResult
 import numpy as np
 import lmfit
 
@@ -54,7 +55,7 @@ def parse_parameter_tuple(
         return args
 
     if not isinstance(params[1], bool):
-        params.insert(1, True)
+        params.insert(1, vary)
         n += 1
 
     for i in range(n):
@@ -480,8 +481,8 @@ def parse_model(model: Dict[str, Tuple] | None) -> LifetimeModel | None:
         if key.startswith("lif") or key.startswith("int")
     ]
 
-    r_indices = {int(p.split("_")[2]) for p in resolution_params}
-    l_indices = {int(p.split("_")[1]) for p in lifetime_params}
+    r_indices = {int(p.split("_")[-1]) for p in resolution_params}
+    l_indices = {int(p.split("_")[-1]) for p in lifetime_params}
 
     n_r = 0 if len(r_indices) == 0 else max(r_indices)
     n_l = 0 if len(l_indices) == 0 else max(l_indices)
@@ -489,17 +490,17 @@ def parse_model(model: Dict[str, Tuple] | None) -> LifetimeModel | None:
     for j in range(1, n_r+1):
         resolution_components.append(
             ResolutionComponent(
-                sigma=parse_parameter_tuple(model.pop(f"res_sigma_{j}", 100)),
-                intensity=parse_parameter_tuple(model.pop(f"res_intensity_{j}", 0.5)),
-                t0=parse_parameter_tuple(model.pop(f"res_t0_{j}", 0))
+                sigma=model.pop(f"res_sigma_{j}", 100),
+                intensity=model.pop(f"res_intensity_{j}", 0.5),
+                t0=model.pop(f"res_t0_{j}", 0)
             )
         )
 
     for i in range(1, n_l+1):
         lifetime_components.append(
             LifetimeComponent(
-                lifetime=parse_parameter_tuple(model.pop(f"lifetime_{i}", 100)),
-                intensity=parse_parameter_tuple(model.pop(f"intensity_{i}", 0.5)),
+                lifetime=model.pop(f"lifetime_{i}", 100),
+                intensity=model.pop(f"intensity_{i}", 0.5),
             )
         )
 
@@ -552,6 +553,19 @@ def dump_model(model: LifetimeModel) -> Dict:
     if model.shift_component is not None:
         p = model.shift_component.value
         out["t0"] = (p.value, p.vary, p.min, p.max)
+
+    return out
+
+
+def dump_fit_result(fit_result: ModelResult):
+    out = {}
+
+    for param in fit_result.params.values():
+        out[param.name] = {
+            "value": param.value,
+            "stderr": param.stderr,
+            "varied": param.vary
+        }
 
     return out
 
@@ -622,4 +636,3 @@ def pick_model(
         f"\nParameters: {params}"
     )
     raise ValueError(err)
-

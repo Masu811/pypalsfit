@@ -15,7 +15,9 @@ from matplotlib.widgets import RangeSlider
 from scipy.special import erfc
 import lmfit
 
-from .model import LifetimeModel, combine_models, parse_model, dump_model
+from .model import (
+    LifetimeModel, combine_models, parse_model, dump_model, dump_fit_result
+)
 from .utils import may_be_nan, gauss
 
 
@@ -84,7 +86,7 @@ class LifetimeSpectrum:
         spectrum: np.ndarray | Sequence[int] | None = None,
         detname: str = "A",
         tcal: Sequence[float] | None = None,
-        name : str | None = None,
+        name: str | None = None,
         lt_model: LifetimeModel | Dict | str | None = None,
         res_model: LifetimeModel | Dict | str | None = None,
         calibrate: bool = False,
@@ -135,6 +137,12 @@ class LifetimeSpectrum:
 
         assert not isinstance(lt_model, str)
         assert not isinstance(res_model, str)
+
+        if isinstance(lt_model, dict) and any(key.startswith("Detector") or key.startswith("Measurement") for key in lt_model.keys()):
+            warnings.warn("Lifetime Model seems to not be of the right format")
+
+        if isinstance(res_model, dict) and any(key.startswith("Detector") or key.startswith("Measurement") for key in res_model.keys()):
+            warnings.warn("Lifetime Model seems to not be of the right format")
 
         # TODO: warn user if either model is of the form
         # {Detector: {}} or {Measurement: {}}
@@ -328,7 +336,7 @@ class LifetimeSpectrum:
                 c = erfc(r_sigma / (l_tau * sqrt_2) - _t / (r_sigma * sqrt_2))
                 y += (l_i * r_i / (2*l_tau)) * e * c
 
-            if self.verbose and np.any(np.isnan(y)):
+            if self.debug and np.any(np.isnan(y)):
                 print(f"{'Parameters of failed model eval':-^50}")
                 print(f"{N = }")
                 print(f"{t0 = }")
@@ -1325,18 +1333,24 @@ class LifetimeSpectrum:
         lifetime_order = np.argsort([params[f"lifetime_{i}"].value for i in range(1, self.n_l+1)])+1
 
         for i in range(1, self.n_l+1):
-            setattr(self, f"lifetime_{i}", params[f"lifetime_{lifetime_order[i-1]}"].value)
-            setattr(self, f"dlifetime_{i}", may_be_nan(params[f"lifetime_{lifetime_order[i-1]}"].stderr))
-            setattr(self, f"intensity_{i}", params[f"intensity_{lifetime_order[i-1]}"].value)
-            setattr(self, f"dintensity_{i}", may_be_nan(params[f"intensity_{lifetime_order[i-1]}"].stderr))
+            k = lifetime_order[i-1]
+            setattr(self, f"lifetime_{i}", params[f"lifetime_{k}"].value)
+            setattr(self, f"dlifetime_{i}", may_be_nan(params[f"lifetime_{k}"].stderr))
+            setattr(self, f"intensity_{i}", params[f"intensity_{k}"].value)
+            setattr(self, f"dintensity_{i}", may_be_nan(params[f"intensity_{k}"].stderr))
+            setattr(self, f"escape_factor_{i}", params[f"escape_factor_{k}"].value)
+            setattr(self, f"descape_factor_{i}", may_be_nan(params[f"escape_factor_{k}"].stderr))
+
+        res_order = np.argsort([params[f"res_sigma_{j}"].value for j in range(1, self.n_r+1)])+1
 
         for j in range(1, self.n_r+1):
-            setattr(self, f"res_sigma_{j}", params[f"res_sigma_{j}"].value)
-            setattr(self, f"dres_sigma_{j}", may_be_nan(params[f"res_sigma_{j}"].stderr))
-            setattr(self, f"res_intensity_{j}", params[f"res_intensity_{j}"].value)
-            setattr(self, f"dres_intensity_{j}", may_be_nan(params[f"res_intensity_{j}"].stderr))
-            setattr(self, f"res_t0_{j}", params[f"res_t0_{j}"].value)
-            setattr(self, f"dres_t0_{j}", may_be_nan(params[f"res_t0_{j}"].stderr))
+            k = res_order[j-1]
+            setattr(self, f"res_sigma_{j}", params[f"res_sigma_{k}"].value)
+            setattr(self, f"dres_sigma_{j}", may_be_nan(params[f"res_sigma_{k}"].stderr))
+            setattr(self, f"res_intensity_{j}", params[f"res_intensity_{k}"].value)
+            setattr(self, f"dres_intensity_{j}", may_be_nan(params[f"res_intensity_{k}"].stderr))
+            setattr(self, f"res_t0_{j}", params[f"res_t0_{k}"].value)
+            setattr(self, f"dres_t0_{j}", may_be_nan(params[f"res_t0_{k}"].stderr))
 
         setattr(self, f"n", params[f"N"].value)
         setattr(self, f"dn", may_be_nan(params[f"N"].stderr))
@@ -1495,7 +1509,7 @@ class LifetimeSpectrum:
         ax1.set_ylabel("Residuals")
 
         if self.fit_result.residual is not None:
-            ax1.scatter(t, self.fit_result.residual, s=1)
+            ax1.scatter(t, self.fit_result.residual, s=1, rasterized=True)
 
         ### Resolution Function and Components
 
@@ -1512,7 +1526,7 @@ class LifetimeSpectrum:
         ax2.set_ylabel("Counts")
         ax2.set_yscale("log")
 
-        ax2.scatter(t, self.trimmed_spectrum, label="Data", s=1)
+        ax2.scatter(t, self.trimmed_spectrum, label="Data", s=1, rasterized=True)
 
         ylim = ax2.get_ylim()
 
@@ -1543,7 +1557,7 @@ class LifetimeSpectrum:
             plt.tight_layout()
             plt.show()
 
-        return fig, (ax1, ax2)
+        return fig, (ax1, ax2, ax3)
 
     def fit_report(self, sep: str = "") -> None:
         """Print a fit report, PALSFIT style.
@@ -1758,6 +1772,46 @@ class LifetimeSpectrum:
         assert self.fit_result is not None, err
 
         out = dump_model(self.model)
+
+        out = {k: v for k, v in out.items() if not k.startswith("res")}
+
+        if filepath is not None:
+            with open(filepath, "w") as f:
+                json.dump(out, f, indent=4)
+
+        return out
+
+    def dump_fit_results(self, filepath=None):
+        err = "No fit has been performed successfully"
+        assert self.fit_result is not None, err
+
+        out = dump_fit_result(self.fit_result)
+
+        if filepath is not None:
+            with open(filepath, "w") as f:
+                json.dump(out, f, indent=4)
+
+        return out
+
+    def dump_resolution_fit_results(self, filepath=None):
+        err = "No fit has been performed successfully"
+        assert self.fit_result is not None, err
+
+        out = dump_fit_result(self.fit_result)
+
+        out = {k: v for k, v in out.items() if k.startswith("res")}
+
+        if filepath is not None:
+            with open(filepath, "w") as f:
+                json.dump(out, f, indent=4)
+
+        return out
+
+    def dump_lifetime_fit_results(self, filepath=None):
+        err = "No fit has been performed successfully"
+        assert self.fit_result is not None, err
+
+        out = dump_fit_result(self.model)
 
         out = {k: v for k, v in out.items() if not k.startswith("res")}
 

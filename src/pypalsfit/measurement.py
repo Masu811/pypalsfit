@@ -373,6 +373,39 @@ class LifetimeMeasurement:
 
         return out
 
+    def dump_fit_results(self, filepath=None):
+        out = {"Metadata": {k: str(v) for k, v in self.metadata.items()}}
+        for i, s in enumerate(self):
+            out[f"Detector {s.detname or i+1}"] = s.dump_fit_results()
+
+        if filepath is not None:
+            with open(filepath, "w") as f:
+                json.dump(out, f, indent=4)
+
+        return out
+
+    def dump_resolution_fit_results(self, filepath=None):
+        out = {"Metadata": {k: str(v) for k, v in self.metadata.items()}}
+        for i, s in enumerate(self):
+            out[f"Detector {s.detname or i+1}"] = s.dump_resolution_fit_results()
+
+        if filepath is not None:
+            with open(filepath, "w") as f:
+                json.dump(out, f, indent=4)
+
+        return out
+
+    def dump_lifetime_fit_results(self, filepath=None):
+        out = {"Metadata": {k: str(v) for k, v in self.metadata.items()}}
+        for i, s in enumerate(self):
+            out[f"Detector {s.detname or i+1}"] = s.dump_lifetime_fit_results()
+
+        if filepath is not None:
+            with open(filepath, "w") as f:
+                json.dump(out, f, indent=4)
+
+        return out
+
 
 class MeasurementCampaign:
     """Class representing a series of measurements on a single sample.
@@ -2802,6 +2835,39 @@ class MeasurementCampaign:
         out = {}
         for i, m in enumerate(self):
             out[f"Measurement {m.name or i+1}"] = m.dump_lifetime_components()
+
+        if filepath is not None:
+            with open(filepath, "w") as f:
+                json.dump(out, f, indent=4)
+        else:
+            return out
+
+    def dump_fit_results(self, filepath=None):
+        out = {}
+        for i, m in enumerate(self):
+            out[f"Measurement {m.name or i+1}"] = m.dump_fit_results()
+
+        if filepath is not None:
+            with open(filepath, "w") as f:
+                json.dump(out, f, indent=4)
+        else:
+            return out
+
+    def dump_resolution_fit_results(self, filepath=None):
+        out = {}
+        for i, m in enumerate(self):
+            out[f"Measurement {m.name or i+1}"] = m.dump_resolution_fit_results()
+
+        if filepath is not None:
+            with open(filepath, "w") as f:
+                json.dump(out, f, indent=4)
+        else:
+            return out
+
+    def dump_lifetime_fit_results(self, filepath=None):
+        out = {}
+        for i, m in enumerate(self):
+            out[f"Measurement {m.name or i+1}"] = m.dump_lifetime_fit_results()
 
         if filepath is not None:
             with open(filepath, "w") as f:
