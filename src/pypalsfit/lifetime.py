@@ -330,11 +330,15 @@ class LifetimeSpectrum:
                 r_sigma = params[f"res_sigma_{j}"]
                 r_i = r_int[j-1]
                 r_t0 = params[f"res_t0_{j}"]
+                e = params[f"escape_factor_{i}"]
                 # e becomes numerically unstable for lifetimes ~ tcal[1]
                 _t = t - (t0 + r_t0)
-                e = np.exp(-_t / l_tau + (r_sigma/(sqrt_2*l_tau))**2)
+                esc = 1 / (1 + e * np.where(
+                    _t > 0, _t, 0
+                )/1e6)**2
+                ex = np.exp(-_t / l_tau + (r_sigma/(sqrt_2*l_tau))**2)
                 c = erfc(r_sigma / (l_tau * sqrt_2) - _t / (r_sigma * sqrt_2))
-                y += (l_i * r_i / (2*l_tau)) * e * c
+                y += (l_i * r_i / (2*l_tau)) * ex * c * esc
 
             if self.debug and np.any(np.isnan(y)):
                 print(f"{'Parameters of failed model eval':-^50}")
@@ -344,6 +348,7 @@ class LifetimeSpectrum:
                 for i in range(1, n_l+1):
                     l = params[f"lifetime_{i}"]
                     h = params[f"h_{i}"]
+                    e = params[f"escape_factor_{i}"]
                     print(f"lifetime_{i} = {l}")
                     print(f"h_{i} = {h}")
                     print(f"intensity_{i} = {l_int[i-1]}")
@@ -395,29 +400,34 @@ class LifetimeSpectrum:
                 r_sigma = params[f"res_sigma_{j}"]
                 r_i = r_int[j-1]
                 r_t0 = params[f"res_t0_{j}"]
+                e = params[f"escape_factor_{i}"]
                 # e becomes numerically unstable for lifetimes ~ tcal[1]
                 _t = t - (t0 + r_t0)
+                t_red = _t/1e6
                 a = -_t / l_tau + (r_sigma/(sqrt_2*l_tau))**2
                 b = r_sigma / (l_tau * sqrt_2) - _t / (r_sigma * sqrt_2)
-                e = np.exp(a)
+                ex = np.exp(a)
                 c = erfc(b)
-                decay = N * l_i * r_i / (2*l_tau) * e * c
+                esc = 1 / (1 + e * np.where(
+                    t_red > 0, t_red, 0
+                ))**2
+                decay = N * l_i * r_i / (2 * l_tau) * ex * c * esc
                 y += decay
                 exp_comb = N * (l_i * r_i) / (sqrt_2_pi * l_tau) * np.exp(a - b**2)
 
-                df_dt0 = (
-                    -exp_comb / r_sigma
-                    + decay / l_tau
+                df_dt0 = -exp_comb / r_sigma + decay / l_tau
+                df_dtau = exp_comb * r_sigma / l_tau**2 + decay * (
+                    -(r_sigma**2) / l_tau**3 + _t / l_tau**2 - 1 / l_tau
                 )
-                df_dtau = (
-                    exp_comb * r_sigma / l_tau**2
-                    + decay * (-r_sigma**2/l_tau**3 + _t/l_tau**2 - 1/l_tau)
-                )
-                df_dsigma = (
-                    decay * r_sigma / l_tau**2
-                    - exp_comb * (1/l_tau + _t/r_sigma**2)
+                df_dsigma = decay * r_sigma / l_tau**2 - exp_comb * (
+                    1 / l_tau + _t / r_sigma**2
                 )
                 df_dr_t0 = df_dt0
+                df_de = np.where(
+                    t_red > 0,
+                    -2 * t_red * decay / (1 + e * np.where(t_red > 0, t_red, 0)),
+                    0
+                )
 
                 terms[f"{i}_{j}"] = decay
 
@@ -426,6 +436,7 @@ class LifetimeSpectrum:
                     df_dtau,
                     df_dsigma,
                     df_dr_t0,
+                    df_de,
                 ]
 
             df_dN = (y - background) / N
@@ -474,7 +485,7 @@ class LifetimeSpectrum:
                         continue
                     elif m == k:
                         df_dres_h_k.append(
-                            terms[f"{n}_{m}"] / (params[f"res_h_{k}"] + 1e-5)
+                            terms[f"{n}_{m}"] / (params[f"res_h_{k}"] + 1e-4)
                         )
                     else:
                         df_dres_h_k.append(
@@ -492,17 +503,19 @@ class LifetimeSpectrum:
                         [deriv[f"{i}_{j}"][1] for j in range(1, n_r+1)], axis=0
                     ) for i in range(1, n_l+1)
                 },
+                **{f"h_{i}": df_dh_i[i - 1] for i in range(1, n_l + 1)},
                 **{
-                    f"h_{i}": df_dh_i[i-1] for i in range(1, n_l+1)
+                    f"escape_factor_{i}": np.sum(
+                        [deriv[f"{i}_{j}"][4] for j in range(1, n_r + 1)], axis=0
+                    )
+                    for i in range(1, n_l + 1)
                 },
                 **{
                     f"res_sigma_{j}": np.sum(
                         [deriv[f"{i}_{j}"][2] for i in range(1, n_l+1)], axis=0
                     ) for j in range(1, n_r+1)
                 },
-                **{
-                    f"res_h_{j}": df_dres_h_j[j-1] for j in range(1, n_r+1)
-                },
+                **{f"res_h_{j}": df_dres_h_j[j - 1] for j in range(1, n_r + 1)},
                 **{
                     f"res_t0_{j}": np.sum(
                         [deriv[f"{i}_{j}"][3] for i in range(1, n_l+1)], axis=0
@@ -604,6 +617,10 @@ class LifetimeSpectrum:
             if i == self.l_last_vary_idx + 1:
                 param.value = 1
                 param.vary = False
+            params.add(deepcopy(param))
+
+            param = lt.escape_factor
+            param.name = f"escape_factor_{i}"
             params.add(deepcopy(param))
 
         #### Resolution Components
@@ -1444,13 +1461,17 @@ class LifetimeSpectrum:
                 r_sigma = params[f"res_sigma_{j}"]
                 r_i = params[f"res_intensity_{j}"]
                 r_t0 = params[f"res_t0_{j}"]
+                e = params[f"escape_factor_{i}"]
                 # e becomes numerically unstable for lifetimes ~ tcal[1]
                 _t = t - r_t0
+                esc = 1 / (1 + e * np.where(
+                    _t > 0, _t, 0
+                )/1e6)**2
                 a = -_t / l_tau + (r_sigma/(sqrt_2*l_tau))**2
                 b = r_sigma / (l_tau * sqrt_2) - _t / (r_sigma * sqrt_2)
-                e = np.exp(a)
+                ex = np.exp(a)
                 c = erfc(b)
-                y += l_i * r_i / (2*l_tau) * e * c
+                y += l_i * r_i / (2*l_tau) * ex * c * esc
             lt_components.append(y * params["N"] + params["background"])
 
         return t_res, lt_components, res_components
@@ -1533,12 +1554,12 @@ class LifetimeSpectrum:
         if show_init:
             ax2.plot(
                 t, self.fit_result.init_fit, linestyle="--",
-                c="C1", label="Initial Fit", zorder=98,
+                c="C1", label="Initial Fit"
             )
 
         ax2.plot(
             t, self.fit_result.best_fit, linestyle="-",
-            c="C2", label="Best Fit", zorder=99,
+            c="C2", label="Best Fit"
         )
 
         for i, c in enumerate(lt_components, 1):
@@ -1607,7 +1628,7 @@ class LifetimeSpectrum:
                     "" if p.vary else "Fixed",
                     "At Boundary" if abs(p.value - p.min) < 1e-3 or abs(p.value - p.max) < 1e-3 else "",
                 ]
-                for p in params
+                for p in params if not (p.name.startswith("esc") and p.value == 0)
             ], dtype=str)
 
             widths = np.max([np.max(np.vectorize(len)(table_data), axis=0),
@@ -1662,7 +1683,7 @@ class LifetimeSpectrum:
             print("!!! intensities don't add up to 100% !!!")
             print()
 
-        params = ["lifetime", "intensity"]
+        params = ["lifetime", "intensity", "escape_factor"]
         params = [f"{p}_{i}" for p in params for i in range(1, n_l+1)]
         print_params([rparams[p] for p in params])
 

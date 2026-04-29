@@ -69,7 +69,8 @@ class LifetimeComponent:
 
     A lifetime component consists of
     - a lifetime
-    - an intensity.
+    - an intensity
+    - an escape flag indicating whether this component escapes from the sample.
 
     Parameters
     ----------
@@ -81,11 +82,15 @@ class LifetimeComponent:
         Intensity. Gets converted to an lmfit.Parameter using
         `parse_parameter_tuple` and stored under the `lifetime` attribute.
         The default value is 0.5.
+    escape_factor : float, optional
+        Indicator of whether this component may escape the sample. If so, it
+        multiplied by a non-exponential correction factor. The default is 0.
     """
     def __init__(
         self,
         lifetime: float | int | lmfit.Parameter | Tuple | List = 100,
         intensity: float | int | lmfit.Parameter | Tuple | List = 0.5,
+        escape_factor: float | int | lmfit.Parameter | Tuple | List = 0,
     ) -> None:
 
         self.lifetime = (
@@ -100,6 +105,24 @@ class LifetimeComponent:
             lmfit.Parameter(
                 "intensity",
                 *parse_parameter_tuple(intensity, min=0)
+            )
+        )
+        self.escape_factor = (
+            escape_factor if isinstance(escape_factor, lmfit.Parameter) else
+            lmfit.Parameter(
+                "escape_factor",
+                *parse_parameter_tuple(
+                    escape_factor,
+                    vary=(
+                        True
+                        if (
+                            isinstance(escape_factor, (float, int)) and escape_factor > 0
+                            or isinstance(escape_factor, (tuple, list)) and escape_factor[0] > 0
+                        )
+                        else False
+                    ),
+                    min=0
+                )
             )
         )
 
@@ -427,6 +450,7 @@ def parse_model(model: Dict[str, Tuple] | None) -> LifetimeModel | None:
 
         - `lifetime_{i}` for the lifetime value of `LifetimeComponent` i
         - `intensity_{i}` for the intensity of `LifetimeComponent` i
+        - `escape_factor_{i}` for the escape factor of `LifetimeComponent` i
         - `res_sigma_{i}` for the standard deviation of `ResolutionComponent` i
         - `res_intensity_{i}` for the intensity of `ResolutionComponent` i
         - `res_t0_{i}` for the time offset of `ResolutionComponent` i
@@ -478,7 +502,7 @@ def parse_model(model: Dict[str, Tuple] | None) -> LifetimeModel | None:
     resolution_params = [key for key in model if key.startswith("res")]
     lifetime_params = [
         key for key in model
-        if key.startswith("lif") or key.startswith("int")
+        if key.startswith("lif") or key.startswith("int") or key.startswith("esc")
     ]
 
     r_indices = {int(p.split("_")[-1]) for p in resolution_params}
@@ -501,6 +525,7 @@ def parse_model(model: Dict[str, Tuple] | None) -> LifetimeModel | None:
             LifetimeComponent(
                 lifetime=model.pop(f"lifetime_{i}", 100),
                 intensity=model.pop(f"intensity_{i}", 0.5),
+                escape_factor=model.pop(f"escape_factor_{i}", 0),
             )
         )
 
