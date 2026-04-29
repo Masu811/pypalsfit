@@ -612,6 +612,7 @@ def pick_model(
     kind: str,
     name: str | None = None,
     debug: bool = False,
+    pick_closest: bool = False,
 ) -> dict | LifetimeModel | None:
     if not isinstance(models, dict) or keys is None or not any(key.startswith("Measurement") for key in models):
         return models
@@ -620,6 +621,22 @@ def pick_model(
 
     if debug:
         print(f"Picking a {kind} model for measurement with parameters {params}...")
+
+    if pick_closest:
+        err = "Can only pick closest if keys are e-dimensional"
+        assert len(keys) == 1, err
+        k = keys[0]
+        value = float(metadata[k])
+        options = [float(model["Metadata"][k]) for _, model in models.items()]
+        distances = [abs(opt - value) for opt in options]
+        closest_value = options[np.argmin(distances)]
+        for name, model in models.items():
+            metadata = model["Metadata"]
+            model_value = float(metadata[k])
+            if model_value == closest_value:
+                if debug:
+                    print(f"Picking {name}")
+                return model
 
     for name, model in models.items():
         metadata = model["Metadata"]
