@@ -5,6 +5,7 @@ from copy import deepcopy
 from itertools import product
 import json
 from pathlib import Path
+import warnings
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -1338,8 +1339,6 @@ class LifetimeSpectrum:
             setattr(self, f"dlifetime_{i}", may_be_nan(params[f"lifetime_{k}"].stderr))
             setattr(self, f"intensity_{i}", params[f"intensity_{k}"].value)
             setattr(self, f"dintensity_{i}", may_be_nan(params[f"intensity_{k}"].stderr))
-            setattr(self, f"escape_factor_{i}", params[f"escape_factor_{k}"].value)
-            setattr(self, f"descape_factor_{i}", may_be_nan(params[f"escape_factor_{k}"].stderr))
 
         res_order = np.argsort([params[f"res_sigma_{j}"].value for j in range(1, self.n_r+1)])+1
 

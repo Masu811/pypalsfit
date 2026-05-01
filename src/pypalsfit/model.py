@@ -614,8 +614,17 @@ def pick_model(
     debug: bool = False,
     pick_closest: bool = False,
 ) -> dict | LifetimeModel | None:
-    if not isinstance(models, dict) or keys is None or not any(key.startswith("Measurement") for key in models):
+    if models is None or isinstance(models, LifetimeModel):
         return models
+
+    if not any(key.startswith("Measurement") for key in models):
+        return models
+    elif keys is None:
+        err = (
+            f"Provided {kind} model seems to describe a MeasurementCampaign, "
+            "but no keys were specified to assign to LifetimeMeasurements"
+        )
+        raise RuntimeError(err)
 
     params = {k: str(metadata[k]) for k in keys}
 
