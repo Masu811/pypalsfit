@@ -1,4 +1,4 @@
-from typing import List, Tuple, Dict, Self, Callable
+from typing import List, Literal, Tuple, Dict, Self, Callable
 from types import EllipsisType
 from collections.abc import Sequence
 from copy import deepcopy
@@ -1088,6 +1088,10 @@ class LifetimeSpectrum:
         bg_end_idx: int | None = None,
         get_bg: bool = False,
         peak_center_window: int | None = None,
+        lt_order_param: Literal["lifetime", "intensity", "unordered"] = "lifetime",
+        res_order_param: Literal["sigma", "intensity", "t0", "unordered"] = "intensity",
+        lt_order: Literal["asc", "desc"] | None = None,
+        res_order: Literal["asc", "desc"] | None = None,
         **kwargs
     ) -> lmfit.model.ModelResult:
         """Fit the spectrum to determine lifetimes and intensities.
@@ -1170,6 +1174,20 @@ class LifetimeSpectrum:
         peak_center_window : int or None, optional
             Window size in channels used to determine the peak center via
             `get_peak_center`. The default is None.
+        lt_order_param : "lifetime" or "intensity" or "unordered", optional
+            Parameter by which to order the lifetime components after the fit.
+            The default is "lifetime".
+        res_order_param : "sigma" or "intensity" or "t0" or "unordered", optional
+            Parameter by which to order the resolution components after the
+            fit. The default is "intensity".
+        lt_order : "asc" or "desc" or None, optional
+            Whether to order lifetime components ascendingly (`asc`) or
+            descendingly (`desc`). If None, intensities are ordered
+            descendingly, anything else ascendingly. The default is None.
+        res_order : "asc" or "desc" or None, optional
+            Whether to order resolution components ascendingly (`asc`) or
+            descendingly (`desc`). If None, intensities are ordered
+            descendingly, anything else ascendingly. The default is None.
         **kwargs:
             Other keyword arguments are passed to lmfit.Model.fit.
 
@@ -1236,7 +1254,12 @@ class LifetimeSpectrum:
             **kwargs
         )
 
-        self.post_fit()
+        self.post_fit(
+            lt_order_param=lt_order_param,
+            res_order_param=res_order_param,
+            lt_order=lt_order,
+            res_order=res_order
+        )
 
         if self.verbose:
             self.fit_report()
@@ -1246,7 +1269,13 @@ class LifetimeSpectrum:
 
         return self.fit_result
 
-    def post_fit(self) -> None:
+    def post_fit(
+        self,
+        lt_order_param: Literal["lifetime", "intensity", "unordered"] = "lifetime",
+        res_order_param: Literal["sigma", "intensity", "t0", "unordered"] = "intensity",
+        lt_order: Literal["asc", "desc"] | None = None,
+        res_order: Literal["asc", "desc"] | None = None,
+    ) -> None:
         """Transform and save fit results.
 
         This method transforms the `h` parameters back to intensities,
@@ -1258,6 +1287,23 @@ class LifetimeSpectrum:
         by the fit result for the time zero. `self.model` is updated to the
         fit result values.
 
+        Parameters
+        ----------
+        lt_order_param : "lifetime" or "intensity" or "unordered", optional
+            Parameter by which to order the lifetime components after the fit.
+            The default is "lifetime".
+        res_order_param : "sigma" or "intensity" or "t0" or "unordered", optional
+            Parameter by which to order the resolution components after the
+            fit. The default is "intensity".
+        lt_order : "asc" or "desc" or None, optional
+            Whether to order lifetime components ascendingly (`asc`) or
+            descendingly (`desc`). If None, intensities are ordered
+            descendingly, anything else ascendingly. The default is None.
+        res_order : "asc" or "desc" or None, optional
+            Whether to order resolution components ascendingly (`asc`) or
+            descendingly (`desc`). If None, intensities are ordered
+            descendingly, anything else ascendingly. The default is None.
+
         Raises
         ------
         AssertionError
@@ -1268,6 +1314,12 @@ class LifetimeSpectrum:
         assert self.fit_result is not None
         assert self.n_l is not None and self.n_r is not None
         assert self.l_vary is not None and self.r_vary is not None
+
+        if lt_order is None:
+            lt_order = "desc" if lt_order_param == "intensity" else "asc"
+
+        if res_order is None:
+            res_order = "desc" if res_order_param == "intensity" else "asc"
 
         params = self.fit_result.params
 
@@ -1331,25 +1383,61 @@ class LifetimeSpectrum:
             param.vary = self.r_vary[j-1]
             param.stderr = r_dint[j-1]
 
-        lifetime_order = np.argsort([params[f"lifetime_{i}"].value for i in range(1, self.n_l+1)])+1
+        match lt_order_param:
+            case "unordered":
+                lt_comp_order = np.arange(1, self.n_l + 1)
+            case _:
+                lt_comp_order = np.argsort(
+                    [params[f"{lt_order_param}_{i}"].value for i in range(1, self.n_l+1)]
+                ) + 1
+                if lt_order == "desc":
+                    lt_comp_order = lt_comp_order[::-1]
+
+        tmp = {
+            f"{param}_{i}": params[f"{param}_{lt_comp_order[i-1]}"]
+            for param in ["lifetime", "intensity"]
+            for i in range(1, self.n_l+1)
+        }
+
+        for key in tmp:
+            param = tmp[key]
+            param.name = key
+            params[key] = param
 
         for i in range(1, self.n_l+1):
-            k = lifetime_order[i-1]
-            setattr(self, f"lifetime_{i}", params[f"lifetime_{k}"].value)
-            setattr(self, f"dlifetime_{i}", may_be_nan(params[f"lifetime_{k}"].stderr))
-            setattr(self, f"intensity_{i}", params[f"intensity_{k}"].value)
-            setattr(self, f"dintensity_{i}", may_be_nan(params[f"intensity_{k}"].stderr))
+            setattr(self, f"lifetime_{i}", params[f"lifetime_{i}"].value)
+            setattr(self, f"dlifetime_{i}", may_be_nan(params[f"lifetime_{i}"].stderr))
+            setattr(self, f"intensity_{i}", params[f"intensity_{i}"].value)
+            setattr(self, f"dintensity_{i}", may_be_nan(params[f"intensity_{i}"].stderr))
 
-        res_order = np.argsort([params[f"res_sigma_{j}"].value for j in range(1, self.n_r+1)])+1
+        match res_order_param:
+            case "unordered":
+                res_comp_order = np.arange(1, self.n_l + 1)
+            case _:
+                res_comp_order = np.argsort(
+                    [params[f"res_{res_order_param}_{j}"].value for j in range(1, self.n_r+1)]
+                ) + 1
+                if lt_order == "desc":
+                    lt_comp_order = lt_comp_order[::-1]
+
+        tmp = {
+            f"res_{param}_{j}": params[f"res_{param}_{res_comp_order[j-1]}"]
+            for param in ["sigma", "intensity", "t0"]
+            for j in range(1, self.n_r+1)
+        }
+
+        for key in tmp:
+            param = tmp[key]
+            param.name = key
+            params[key] = param
 
         for j in range(1, self.n_r+1):
-            k = res_order[j-1]
-            setattr(self, f"res_sigma_{j}", params[f"res_sigma_{k}"].value)
-            setattr(self, f"dres_sigma_{j}", may_be_nan(params[f"res_sigma_{k}"].stderr))
-            setattr(self, f"res_intensity_{j}", params[f"res_intensity_{k}"].value)
-            setattr(self, f"dres_intensity_{j}", may_be_nan(params[f"res_intensity_{k}"].stderr))
-            setattr(self, f"res_t0_{j}", params[f"res_t0_{k}"].value)
-            setattr(self, f"dres_t0_{j}", may_be_nan(params[f"res_t0_{k}"].stderr))
+            setattr(self, f"res_sigma_{j}", params[f"res_sigma_{j}"].value)
+            setattr(self, f"dres_sigma_{j}", may_be_nan(params[f"res_sigma_{j}"].stderr))
+            setattr(self, f"res_intensity_{j}", params[f"res_intensity_{j}"].value)
+            setattr(self, f"dres_intensity_{j}", may_be_nan(params[f"res_intensity_{j}"].stderr))
+            setattr(self, f"res_t0_{j}", params[f"res_t0_{j}"].value)
+            setattr(self, f"dres_t0_{j}", may_be_nan(params[f"res_t0_{j}"].stderr))
 
         setattr(self, f"n", params[f"N"].value)
         setattr(self, f"dn", may_be_nan(params[f"N"].stderr))
@@ -1375,6 +1463,8 @@ class LifetimeSpectrum:
             value=self.mean_lifetime,
         )
         params["mean_lifetime"].stderr = self.dmean_lifetime
+
+        self.fit_result.params = params
 
         self.model = parse_model({
             k: (v.value, v.vary, v.min, v.max) for k, v in params.items()
