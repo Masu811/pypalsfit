@@ -135,7 +135,10 @@ class LifetimeMeasurement:
         verbose: bool = False,
         autocompute: bool = True,
         debug: bool = False,
-        pick_closest: bool = False,
+        pick_closest_lt_model: bool = False,
+        pick_closest_res_model: bool = False,
+        interpolate_lt_model: bool = False,
+        interpolate_res_model: bool = False,
         **kwargs
     ) -> None:
 
@@ -182,8 +185,14 @@ class LifetimeMeasurement:
             assert not isinstance(lt_model, str)
             assert not isinstance(res_model, str)
 
-            lt_model = pick_model(lt_model, lt_keys, self.metadata, "lifetime", self.name, debug, pick_closest)
-            res_model = pick_model(res_model, res_keys, self.metadata, "resolution", self.name, debug, pick_closest)
+            lt_model = pick_model(
+                lt_model, lt_keys, self.metadata, "lifetime", self.name, debug,
+                pick_closest_lt_model, interpolate_lt_model,
+            )
+            res_model = pick_model(
+                res_model, res_keys, self.metadata, "resolution", self.name, debug,
+                pick_closest_res_model, interpolate_res_model
+            )
 
             if not isinstance(lt_model, dict) or not any(key.startswith("Detector") for key in lt_model):
                 lt_model = {

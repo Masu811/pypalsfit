@@ -613,6 +613,7 @@ def pick_model(
     name: str | None = None,
     debug: bool = False,
     pick_closest: bool = False,
+    interpolate: bool = False,
 ) -> dict | LifetimeModel | None:
     if models is None or isinstance(models, LifetimeModel):
         return models
@@ -628,24 +629,32 @@ def pick_model(
 
     params = {k: str(metadata[k]) for k in keys}
 
-    if debug:
-        print(f"Picking a {kind} model for measurement with parameters {params}...")
+    if interpolate:
+        return interpolate_model(
+            models, keys, metadata, kind, params, name, debug
+        )
 
     if pick_closest:
-        err = "Can only pick closest if keys are e-dimensional"
-        assert len(keys) == 1, err
-        k = keys[0]
-        value = float(metadata[k])
-        options = [float(model["Metadata"][k]) for _, model in models.items()]
-        distances = [abs(opt - value) for opt in options]
-        closest_value = options[np.argmin(distances)]
-        for name, model in models.items():
-            metadata = model["Metadata"]
-            model_value = float(metadata[k])
-            if model_value == closest_value:
-                if debug:
-                    print(f"Picking {name}")
-                return model
+        return pick_closest_model(
+            models, keys, metadata, kind, params, name, debug
+        )
+
+    return pick_matching_model(
+        models, keys, metadata, kind, params, name, debug
+    )
+
+
+def pick_matching_model(
+    models: dict,
+    keys: list[str],
+    metadata: dict[str, str],
+    kind: str,
+    params: dict,
+    name: str | None = None,
+    debug: bool = False,
+):
+    if debug:
+        print(f"Picking matching {kind} model for measurement with parameters {params}...")
 
     for name, model in models.items():
         metadata = model["Metadata"]
@@ -662,3 +671,141 @@ def pick_model(
         f"\nParameters: {params}"
     )
     raise ValueError(err)
+
+
+def pick_closest_model(
+    models: dict,
+    keys: list[str],
+    metadata: dict[str, str],
+    kind: str,
+    params: dict,
+    name: str | None = None,
+    debug: bool = False,
+):
+    if debug:
+        print(f"Picking closest {kind} model for measurement with parameters {params}...")
+
+    err = "Can only pick closest if keys are 1-dimensional"
+    assert len(keys) == 1, err
+
+    target_key = keys[0]
+    target_value = float(metadata[target_key])
+
+    provided_values = [
+        float(model["Metadata"][target_key]) for model in models.values()
+    ]
+
+    distances = [abs(value - target_value) for value in provided_values]
+    closest_value = provided_values[np.argmin(distances)]
+
+    for name, model in models.items():
+        metadata = model["Metadata"]
+        model_value = float(metadata[target_key])
+        if model_value == closest_value:
+            if debug:
+                print(f"Picking {name}")
+            return model
+
+    err = (
+        f"No provided {kind} model matches this "
+        "LifetimeMeasurement's parameters:"
+        f"\nMeasurement: {name}"
+        f"\nParameters: {params}"
+    )
+    raise ValueError(err)
+
+
+def interpolate_model(
+    models: dict,
+    keys: list[str],
+    metadata: dict[str, str],
+    kind: str,
+    params: dict,
+    name: str | None = None,
+    debug: bool = False,
+) -> dict | LifetimeModel | None:
+    if debug:
+        print(f"Interpolating {kind} model for measurement with parameters {params}...")
+
+    err = "Can only interpolate if keys are 1-dimensional"
+    assert len(keys) == 1, err
+
+    target_key = keys[0]
+    target_value = float(metadata[target_key])
+
+    provided_keys = list(models.keys())
+
+    provided_models = [
+        models[key] for key in provided_keys
+    ]
+
+    provided_values = [
+        float(model["Metadata"][target_key]) for model in provided_models
+    ]
+
+    order = np.argsort(provided_values)
+
+    provided_values = [provided_values[i] for i in order]
+    provided_models = [provided_models[i] for i in order]
+    provided_keys = [provided_keys[i] for i in order]
+
+    distances = [abs(value - target_value) for value in provided_values]
+    closest_index = np.argmin(distances)
+
+    second_index = (
+        closest_index - 1
+        if distances[closest_index - 1] < distances[closest_index + 1]
+        else closest_index + 1
+    )
+
+    left_index = min(closest_index, second_index)
+    right_index = max(closest_index, second_index)
+
+    left_value = provided_values[left_index]
+    right_value = provided_values[right_index]
+
+    left_model = provided_models[left_index]
+    right_model = provided_models[right_index]
+
+    if debug:
+        print(
+            f"Picking {provided_keys[left_index]} ({target_key} = {provided_values[left_index]})"
+            f"and {provided_keys[right_index]} ({target_key} = {provided_values[right_index]})"
+        )
+
+    def interpolate(a, b):
+        return a + (b - a) * (target_value - left_value) / (right_value - left_value)
+
+    err = "The models to use for interpolation contain different detectors"
+    assert set(left_model.keys()) == set(right_model.keys()), err
+
+    interpolated_model = {}
+
+    for detector in left_model.keys():
+        if not detector.startswith("Detector"):
+            continue
+
+        left_detector = left_model[detector]
+        right_detector = right_model[detector]
+
+        err = "The models to use for interpolation contain different numbers of components"
+        assert set(left_detector.keys()) == set(right_detector.keys()), err
+
+        model = {}
+
+        for param in left_detector.keys():
+            left_param = parse_parameter_tuple(left_detector[param])
+            right_param = parse_parameter_tuple(right_detector[param])
+
+            new_param = [
+                interpolate(left_param[0], right_param[0]),
+                left_param[1] and right_param[1],
+                interpolate(left_param[2], right_param[2]),
+                interpolate(left_param[3], right_param[3]),
+            ]
+
+            model[param] = new_param
+
+        interpolated_model[detector] = model
+
+    return interpolated_model
