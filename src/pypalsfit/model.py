@@ -752,10 +752,13 @@ def interpolate_model(
     distances = [abs(value - target_value) for value in provided_values]
     closest_index = np.argmin(distances)
 
+    l = len(provided_models)
+
     second_index = (
-        closest_index - 1
-        if distances[closest_index - 1] < distances[closest_index + 1]
-        else closest_index + 1
+        1 if closest_index == 0 else
+        l - 2 if closest_index == l - 1 else
+        closest_index - 1 if distances[closest_index - 1] < distances[closest_index + 1] else
+        closest_index + 1
     )
 
     left_index = min(closest_index, second_index)

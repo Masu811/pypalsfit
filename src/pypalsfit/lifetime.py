@@ -1061,7 +1061,7 @@ class LifetimeSpectrum:
                 fit_channels_right_of_peak, fit_time_right_of_peak
             ) or len(self.spectrum) - 1
 
-        data_range = slice(left_fit_idx, right_fit_idx)
+        data_range = slice(max(left_fit_idx, 0), max(right_fit_idx, 0))
 
         self.trimmed_times = self.times[data_range]
         self.trimmed_spectrum = self.spectrum[data_range]
