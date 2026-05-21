@@ -800,14 +800,20 @@ def interpolate_model(
             left_param = parse_parameter_tuple(left_detector[param])
             right_param = parse_parameter_tuple(right_detector[param])
 
-            new_param = [
-                interpolate(left_param[0], right_param[0]),
-                left_param[1] and right_param[1],
-                interpolate(left_param[2], right_param[2]),
-                interpolate(left_param[3], right_param[3]),
-            ]
+            new_param = interpolate(left_param[0], right_param[0])
+            new_vary = left_param[1] and right_param[1]
+            new_min = (
+                interpolate(left_param[2], right_param[2])
+                if np.all(np.isfinite([left_param[2], right_param[2]])) else
+                max(left_param[2], right_param[2])
+            )
+            new_max = (
+                interpolate(left_param[3], right_param[3])
+                if np.all(np.isfinite([left_param[3], right_param[3]])) else
+                min(left_param[3], right_param[3])
+            )
 
-            model[param] = new_param
+            model[param] = [new_param, new_vary, new_min, new_max]
 
         interpolated_model[detector] = model
 
