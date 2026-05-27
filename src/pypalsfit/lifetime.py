@@ -631,8 +631,10 @@ class LifetimeSpectrum:
 
             param = res.t0
             param.name = f"res_t0_{j}"
-            if j == 1:
-                param.value = 0
+            if (
+                j == 1 and
+                all(rcomp.t0.vary for rcomp in self.model.resolution_components)
+            ):
                 param.vary = False
             params.add(deepcopy(param))
 
@@ -1383,15 +1385,14 @@ class LifetimeSpectrum:
             param.vary = self.r_vary[j-1]
             param.stderr = r_dint[j-1]
 
-        match lt_order_param:
-            case "unordered":
-                lt_comp_order = np.arange(1, self.n_l + 1)
-            case _:
-                lt_comp_order = np.argsort(
-                    [params[f"{lt_order_param}_{i}"].value for i in range(1, self.n_l+1)]
-                ) + 1
-                if lt_order == "desc":
-                    lt_comp_order = lt_comp_order[::-1]
+        if lt_order_param == "unordered":
+            lt_comp_order = np.arange(1, self.n_l + 1)
+        else:
+            lt_comp_order = np.argsort(
+                [params[f"{lt_order_param}_{i}"].value for i in range(1, self.n_l+1)]
+            ) + 1
+            if lt_order == "desc":
+                lt_comp_order = lt_comp_order[::-1]
 
         tmp = {
             f"{param}_{i}": params[f"{param}_{lt_comp_order[i-1]}"]
@@ -1410,15 +1411,14 @@ class LifetimeSpectrum:
             setattr(self, f"intensity_{i}", params[f"intensity_{i}"].value)
             setattr(self, f"dintensity_{i}", may_be_nan(params[f"intensity_{i}"].stderr))
 
-        match res_order_param:
-            case "unordered":
-                res_comp_order = np.arange(1, self.n_l + 1)
-            case _:
-                res_comp_order = np.argsort(
-                    [params[f"res_{res_order_param}_{j}"].value for j in range(1, self.n_r+1)]
-                ) + 1
-                if lt_order == "desc":
-                    lt_comp_order = lt_comp_order[::-1]
+        if res_order_param == "unordered":
+            res_comp_order = np.arange(1, self.n_r + 1)
+        else:
+            res_comp_order = np.argsort(
+                [params[f"res_{res_order_param}_{j}"].value for j in range(1, self.n_r+1)]
+            ) + 1
+            if res_order == "desc":
+                res_comp_order = res_comp_order[::-1]
 
         tmp = {
             f"res_{param}_{j}": params[f"res_{param}_{res_comp_order[j-1]}"]
